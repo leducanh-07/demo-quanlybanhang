@@ -5,7 +5,7 @@ import { jsonSuccess, jsonError } from "@/lib/apiResponse";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAuth(["STATION", "OWNER"]);
+    await requireAuth(["MANAGER"]);
     const { searchParams } = new URL(req.url);
     const q = searchParams.get("q") || "";
 

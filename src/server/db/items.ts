@@ -24,11 +24,12 @@ export async function listAllItems(): Promise<Item[]> {
 export async function createItem(
   name: string,
   unitPrice: number,
-  imageUrl?: string | null
+  imageUrl?: string | null,
+  isActive: boolean = false
 ): Promise<number> {
   const result: any = await query(
-    "INSERT INTO items (name, unit_price, image_url, is_active) VALUES (?, ?, ?, 1)",
-    [name.trim(), unitPrice, imageUrl?.trim() || null]
+    "INSERT INTO items (name, unit_price, image_url, is_active) VALUES (?, ?, ?, ?)",
+    [name.trim(), unitPrice, imageUrl?.trim() || null, isActive ? 1 : 0]
   );
   return result.insertId;
 }

@@ -1,6 +1,6 @@
 # Quản Lý Xe Cá Viên Chiên & Ăn Vặt (Fishball Cart Management)
 
-Hệ thống web app tinh gọn, chuyên dụng cho quán/xe cá viên chiên và đồ ăn vặt tại Việt Nam. Phục vụ 2 vai trò: Trạm máy tại quầy (STATION) để nhân viên tự chấm công và nhập kho/chốt ngày; và Chủ quán (OWNER) theo dõi trực tiếp từ xa trên điện thoại/laptop.
+Hệ thống web app tinh gọn, chuyên dụng cho quán/xe cá viên chiên và đồ ăn vặt tại Việt Nam. Phục vụ 2 vai trò: Quản lý chi nhánh (MANAGER) chấm công và nhập kho/chốt ngày; và Chủ chi nhánh (OWNER) theo dõi trực tiếp từ xa trên điện thoại/laptop.
 
 ---
 
@@ -38,14 +38,14 @@ Hệ thống web app tinh gọn, chuyên dụng cho quán/xe cá viên chiên v�
 > [!WARNING]
 > Mật khẩu dưới đây chỉ dành cho môi trường phát triển (Development). Hãy đổi mật khẩu ngay sau khi triển khai thực tế.
 
-- **Tài khoản Chủ quán (OWNER):**
+- **Tài khoản Chủ chi nhánh (OWNER):**
   - Tên đăng nhập: `owner`
   - Mật khẩu mặc định: `cavienchien`
   - Đường dẫn truy cập: `/owner`
-- **Tài khoản Trạm máy quầy bán (STATION):**
-  - Tên đăng nhập: `station`
+- **Tài khoản Quản lý chi nhánh (MANAGER):**
+  - Tên đăng nhập: `manager`
   - Mật khẩu mặc định: `yaemiko`
-  - Đường dẫn truy cập: `/station`
+  - Đường dẫn truy cập: `/manager`
 
 ---
 
@@ -100,7 +100,7 @@ The `*:aiven` scripts always print `Target: <host>:<port> / <db>` before doing a
 6. **Health Check Path:** `/api/health`
 
 > [!IMPORTANT]
-> Do NOT set `SEED_OWNER_PASSWORD` or `SEED_STATION_PASSWORD` in Render. Run `npm run seed:aiven` locally after filling `.env.aiven`, before the first deploy.
+> Do NOT set `DEFAULT_OWNER_PASSWORD` or `DEFAULT_MANAGER_PASSWORD` in Render. Run `npm run seed:aiven` locally after filling `.env.aiven`, before the first deploy.
 
 > [!NOTE]
 > `DB_SSL_CA` on Render takes the full PEM text with literal `\n` sequences — the app converts them to real newlines automatically.
@@ -114,4 +114,4 @@ The `*:aiven` scripts always print `Target: <host>:<port> / <db>` before doing a
 3. **Cột Sinh (Generated Columns):** Các cột `open_employee_id`, `sold_qty`, `subtotal` được máy chủ MySQL tự động tính toán. Mã nguồn ứng dụng chỉ đọc (SELECT) và không bao giờ chèn hay sửa (INSERT/UPDATE) trực tiếp vào các cột này.
 4. **Múi Giờ Việt Nam:** Mọi mốc thời gian DATETIME và DATE đều được lưu dưới dạng chuỗi địa phương `Asia/Ho_Chi_Minh` (UTC+7) qua các helper `nowVN()` và `todayVN()`. Driver MySQL sử dụng `timezone: '+07:00'` và `dateStrings: true` để tránh mọi sai lệch múi giờ.
 5. **Chống Brute-force Đăng Nhập:** Giới hạn đăng nhập sai tối đa 5 lần mỗi cặp `username + IP`, sau đó tạm khóa 5 phút (lưu trữ in-memory không cần thêm cột vào DB).
-6. **Thu Hồi Phiên Trạm Máy Từ Xa:** Khi Chủ quán đổi mật khẩu trạm từ trang quản trị, trường `session_version` của tài khoản `station` tự động tăng lên 1, làm vô hiệu hóa tức thì mọi phiên đăng nhập cũ trên máy tính điểm bán.
+6. **Thu Hồi Phiên Quản Lý Từ Xa:** Khi OWNER đặt lại mật khẩu tài khoản MANAGER, trường `session_version` tự động tăng lên 1 và thu hồi mọi phiên đăng nhập cũ của tài khoản đó.

@@ -7,7 +7,7 @@ Host: 127.0.0.1:3306
 CREATE TABLE `accounts` (
   `id` int NOT NULL AUTO_INCREMENT,
   `username` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `role` enum('OWNER','STATION') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `role` enum('OWNER','MANAGER') COLLATE utf8mb4_unicode_ci NOT NULL,
   `password_hash` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `session_version` int NOT NULL DEFAULT '1',
   PRIMARY KEY (`id`),

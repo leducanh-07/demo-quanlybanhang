@@ -6,7 +6,7 @@ export const CONFIG = {
   STALE_COUNT_HOURS: 3,
 
   // Session lifetimes in days
-  STATION_SESSION_DAYS: 30,
+  MANAGER_SESSION_DAYS: 30,
   OWNER_SESSION_DAYS: 7,
 
   // Login throttling
@@ -14,5 +14,5 @@ export const CONFIG = {
   LOCKOUT_MINUTES: 5,
 
   // Cookie name
-  COOKIE_NAME: "fishball_session",
+  COOKIE_NAME: process.env.COOKIE_NAME || "fishball_session",
 } as const;

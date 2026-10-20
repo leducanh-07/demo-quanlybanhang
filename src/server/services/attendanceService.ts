@@ -21,7 +21,7 @@ export async function lookupEmployees(queryStr: string): Promise<Employee[]> {
 
 export async function toggleAttendance(
   employeeId: number,
-  actorRole: "OWNER" | "STATION"
+  actorRole: "OWNER" | "MANAGER"
 ): Promise<{
   success: boolean;
   action?: "CLOCK_IN" | "CLOCK_OUT";
@@ -30,7 +30,7 @@ export async function toggleAttendance(
   time?: string;
   error?: string;
 }> {
-  if (actorRole !== "STATION") {
+  if (actorRole !== "MANAGER") {
     return {
       success: false,
       error: "Tài khoản Chủ quán (OWNER) chỉ có quyền xem, không được chấm công.",

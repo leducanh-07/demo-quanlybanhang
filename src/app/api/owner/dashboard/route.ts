@@ -12,9 +12,11 @@ export async function GET(req: NextRequest) {
 
     const data = await getOwnerDashboardData({ startDate, endDate });
     return jsonSuccess(data);
-  } catch (err: any) {
-    if (err.message === "UNAUTHORIZED") return jsonError("Chưa đăng nhập", 401);
-    if (err.message === "FORBIDDEN") return jsonError("Không có quyền truy cập báo cáo", 403);
+  } catch (err: unknown) {
+    console.error("[GET /api/owner/dashboard]", err);
+    const message = err instanceof Error ? err.message : String(err);
+    if (message === "UNAUTHORIZED") return jsonError("Chưa đăng nhập", 401);
+    if (message === "FORBIDDEN") return jsonError("Không có quyền truy cập báo cáo", 403);
     return jsonError("Lỗi tải dữ liệu báo cáo", 500);
   }
 }

@@ -6,18 +6,15 @@ import { jsonSuccess, jsonError } from "@/lib/apiResponse";
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await requireAuth(["STATION"]);
+    const session = await requireAuth(["MANAGER", "OWNER"]);
     const body = await req.json();
     const parsed = adjustStockSchema.safeParse(body);
     if (!parsed.success) {
       return jsonError(parsed.error.errors[0]?.message || "Dữ liệu không hợp lệ", 400);
     }
 
-    const { workDate } = body;
-    if (!workDate) return jsonError("Thiếu ngày bán", 400);
-
     const result = await addWasteQuantity(
-      workDate,
+      parsed.data.workDate,
       parsed.data.itemId,
       parsed.data.qty,
       session

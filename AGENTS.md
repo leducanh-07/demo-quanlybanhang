@@ -1,9 +1,9 @@
 # AGENTS.md
 
 ## Overview
-Management system for a street food cart / small shop selling fried fish balls and snacks in Vietnam.
-- **STATION Account**: Logged in permanently at the shop computer/tablet. Handles attendance clock-in/out and daily stock/closing.
-- **OWNER Account**: Remote access from phone/laptop. Monitors live attendance, mid-shift stock counts, revenue, alerts, reports, and manages menu/staff.
+Management system for a multi-branch store selling fried fish balls and snacks in Vietnam.
+- **MANAGER Account**: Branch Manager (Quản lý chi nhánh) logged in at the branch computer/tablet. Handles attendance clock-in/out and daily stock/closing for their branch.
+- **OWNER Account**: Store Owner / System Administrator with full access to the entire business and all branches. Remote access from phone/laptop. Monitors live attendance, mid-shift stock counts, revenue, alerts, reports, and manages menu/staff across all branches.
 - Attendance and Stock/Revenue are independent features. Stock belongs to a business DAY, not to an employee shift.
 
 ## Tech Stack
@@ -24,7 +24,7 @@ Management system for a street food cart / small shop selling fried fish balls a
 2. `subtotal = sold_qty * unit_price` (using unit_price snapshot taken at day start).
 3. Attendance: 1 button toggle. One open shift per employee enforced by MySQL `uq_shifts_open_employee`.
 4. Day closing: Runs in ONE DB transaction requiring ending_qty for EVERY active item and cash_counted.
-5. Locks: Closed days are locked for STATION; only OWNER can reopen or edit (fully audited in `audit_logs`).
+5. Locks: Closed days are locked for MANAGER; only OWNER can reopen or edit (fully audited in `audit_logs`).
 6. Login throttling: In-memory, 5 failed attempts per username+IP => locked 5 minutes.
 7. Constants: `VARIANCE_ABS_VND = 20000`, `VARIANCE_PCT = 3`, `FORGOTTEN_SHIFT_HOURS = 14`, `STALE_COUNT_HOURS = 3`.
-8. Permissions: OWNER cannot clock in/out; STATION cannot view revenue history or owner dashboards.
+8. Permissions: OWNER cannot clock in/out; MANAGER cannot view revenue history or owner dashboards.

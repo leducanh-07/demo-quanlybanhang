@@ -21,6 +21,7 @@ export const startDaySchema = z.object({
 export const adjustStockSchema = z.object({
   itemId: z.number().int().positive(),
   qty: z.number().int().positive("Số lượng phải lớn hơn 0"),
+  workDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Ngày bán không hợp lệ"),
 });
 
 export const recordCountSchema = z.object({
@@ -55,12 +56,22 @@ export const employeeFormSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-export const itemFormSchema = z.object({
-  name: z.string().trim().min(1, "Tên món không được để trống").max(100),
-  unitPrice: z.number().int().min(0, "Đơn giá không được âm"),
-  imageUrl: z.string().trim().max(500).nullable().optional(),
-  isActive: z.boolean().default(true),
-});
+const activeStatusSchema = z
+  .union([z.boolean(), z.literal(0), z.literal(1)])
+  .transform((value) => value === true || value === 1);
+
+export const itemFormSchema = z
+  .object({
+    name: z.string().trim().min(1, "Tên món không được để trống").max(100),
+    unitPrice: z.number().int().min(0, "Đơn giá không được âm"),
+    imageUrl: z.string().trim().max(500).nullable().optional(),
+    isActive: activeStatusSchema.optional(),
+    is_active: activeStatusSchema.optional(),
+  })
+  .transform(({ isActive, is_active, ...item }) => ({
+    ...item,
+    isActive: isActive ?? is_active ?? false,
+  }));
 
 export const shiftTimeEditSchema = z.object({
   checkInTime: z.string().regex(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/, "Thời gian vào không đúng định dạng YYYY-MM-DD HH:MM:SS"),
@@ -76,6 +87,7 @@ export const changePasswordSchema = z.object({
   newPassword: z.string().min(6, "Mật khẩu mới tối thiểu 6 ký tự"),
 });
 
-export const resetStationPasswordSchema = z.object({
+export const resetManagerPasswordSchema = z.object({
+  username: z.string().trim().min(1, "Vui lòng nhập tên đăng nhập").max(50),
   newPassword: z.string().min(6, "Mật khẩu mới tối thiểu 6 ký tự"),
 });

@@ -1,26 +1,35 @@
 import mysql from "mysql2/promise";
-import bcrypt from "bcryptjs";
+import { hashPassword } from "@/lib/auth";
 import { loadAndValidateAivenEnv } from "./aiven-preflight";
 
 async function main() {
   const env = loadAndValidateAivenEnv();
 
-  const ownerPassword = process.env.SEED_OWNER_PASSWORD || "";
-  const stationPassword = process.env.SEED_STATION_PASSWORD || "";
+  const ownerUsername = process.env.DEFAULT_OWNER_USERNAME || "owner";
+  const ownerPassword = process.env.DEFAULT_OWNER_PASSWORD || process.env.SEED_OWNER_PASSWORD || "";
+  const managerUsername = process.env.DEFAULT_MANAGER_USERNAME || "manager";
+  const managerPassword = process.env.DEFAULT_MANAGER_PASSWORD || process.env.SEED_MANAGER_PASSWORD || "";
+  if (ownerUsername === managerUsername) {
+    throw new Error("DEFAULT_OWNER_USERNAME and DEFAULT_MANAGER_USERNAME must be different.");
+  }
 
-  // Enforce strong seed passwords (>= 12 characters)
-  if (!ownerPassword || ownerPassword.length < 12) {
+  // Match the password validation used by the authenticated account flows.
+  if (!ownerPassword || ownerPassword.length < 6) {
     console.error(
-      "❌ Lỗi: SEED_OWNER_PASSWORD trong .env.aiven không hợp lệ hoặc quá ngắn (yêu cầu tối thiểu 12 ký tự để đảm bảo an toàn cho môi trường Aiven/Production)."
+      "❌ Lỗi: DEFAULT_OWNER_PASSWORD trong .env.aiven phải có ít nhất 6 ký tự."
     );
     process.exit(1);
   }
 
-  if (!stationPassword || stationPassword.length < 12) {
+  if (!managerPassword || managerPassword.length < 6) {
     console.error(
-      "❌ Lỗi: SEED_STATION_PASSWORD trong .env.aiven không hợp lệ hoặc quá ngắn (yêu cầu tối thiểu 12 ký tự để đảm bảo an toàn cho môi trường Aiven/Production)."
+      "❌ Lỗi: DEFAULT_MANAGER_PASSWORD trong .env.aiven phải có ít nhất 6 ký tự."
     );
     process.exit(1);
+  }
+
+  if (ownerPassword.length < 12 || managerPassword.length < 12) {
+    console.warn("⚠️ Mật khẩu tài khoản nên dài ít nhất 12 ký tự để tăng cường bảo mật.");
   }
 
   let conn: mysql.Connection | null = null;
@@ -37,34 +46,43 @@ async function main() {
       dateStrings: true,
     });
 
-    // Check existing accounts
-    const [existingAccounts]: any = await conn.execute(
-      "SELECT id, username, role FROM accounts WHERE username IN ('owner', 'station')"
+    const [roleColumns]: any = await conn.execute(
+      `SELECT COLUMN_TYPE AS columnType
+       FROM information_schema.columns
+       WHERE table_schema = DATABASE() AND table_name = 'accounts' AND column_name = 'role'`
     );
-
-    const usernames = existingAccounts.map((a: any) => a.username);
-
-    if (!usernames.includes("owner")) {
-      const hash = await bcrypt.hash(ownerPassword, 10);
-      await conn.execute(
-        "INSERT INTO accounts (username, role, password_hash, session_version) VALUES (?, 'OWNER', ?, 1)",
-        ["owner", hash]
+    const roleType = roleColumns[0]?.columnType || "";
+    if (!roleType.includes("OWNER") || !roleType.includes("MANAGER")) {
+      throw new Error(
+        "The configured accounts.role column does not support OWNER and MANAGER. No accounts were seeded."
       );
-      console.log("✅ Đã tạo tài khoản OWNER (username: owner) trên Aiven.");
-    } else {
-      console.log("ℹ️ Tài khoản OWNER đã tồn tại trên Aiven, bỏ qua tạo mới.");
     }
 
-    if (!usernames.includes("station")) {
-      const hash = await bcrypt.hash(stationPassword, 10);
-      await conn.execute(
-        "INSERT INTO accounts (username, role, password_hash, session_version) VALUES (?, 'STATION', ?, 1)",
-        ["station", hash]
-      );
-      console.log("✅ Đã tạo tài khoản STATION (username: station) trên Aiven.");
-    } else {
-      console.log("ℹ️ Tài khoản STATION đã tồn tại trên Aiven, bỏ qua tạo mới.");
-    }
+    const ownerHash = await hashPassword(ownerPassword);
+    const managerHash = await hashPassword(managerPassword);
+
+    await conn.beginTransaction();
+    await conn.execute(
+      `INSERT INTO accounts (username, role, password_hash, session_version)
+       VALUES (?, 'OWNER', ?, 1)
+       ON DUPLICATE KEY UPDATE
+         role = VALUES(role),
+         password_hash = VALUES(password_hash),
+         session_version = session_version + 1`,
+      [ownerUsername, ownerHash]
+    );
+    await conn.execute(
+      `INSERT INTO accounts (username, role, password_hash, session_version)
+       VALUES (?, 'MANAGER', ?, 1)
+       ON DUPLICATE KEY UPDATE
+         role = VALUES(role),
+         password_hash = VALUES(password_hash),
+         session_version = session_version + 1`,
+      [managerUsername, managerHash]
+    );
+    await conn.commit();
+    console.log(`✅ Đã tạo/cập nhật tài khoản OWNER (${ownerUsername}) trên Aiven.`);
+    console.log(`✅ Đã tạo/cập nhật tài khoản MANAGER (${managerUsername}) trên Aiven.`);
 
     console.log("✅ Hoàn tất thiết lập tài khoản ban đầu trên Aiven.");
   } catch (err: any) {

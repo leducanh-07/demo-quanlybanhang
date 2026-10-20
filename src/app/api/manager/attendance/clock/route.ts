@@ -6,12 +6,7 @@ import { jsonSuccess, jsonError } from "@/lib/apiResponse";
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await requireAuth(["STATION", "OWNER"]);
-
-    // Enforce permission: OWNER cannot clock in/out
-    if (session.role !== "STATION") {
-      return jsonError("Tài khoản Chủ quán chỉ có quyền xem, không được chấm công.", 403);
-    }
+    const session = await requireAuth(["MANAGER"]);
 
     const body = await req.json();
     const parsed = clockToggleSchema.safeParse(body);

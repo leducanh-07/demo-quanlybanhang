@@ -9,8 +9,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   LogOut,
-  Plus,
-  Minus,
   RefreshCw,
   TrendingUp,
   Coins,
@@ -22,7 +20,8 @@ import {
 } from "lucide-react";
 import { formatVND, formatSignedVND } from "@/lib/format";
 import { formatTimeOnly, formatDateTimeVN, todayVN } from "@/lib/time";
-import type { Employee, Shift, Item, DailyStock } from "@/types";
+import type { Employee, Shift, Item } from "@/types";
+import { ItemInventoryGrid } from "@/components/ItemInventoryGrid";
 
 interface StockStateResponse {
   day: any;
@@ -33,10 +32,11 @@ interface StockStateResponse {
   latestCountTimestamp: string | null;
   estimatedRevenue: number;
   activeMenuItems: Item[];
+  menuItems: Item[];
   canEdit: boolean;
 }
 
-export default function StationPage() {
+export default function ManagerPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"attendance" | "stock">("attendance");
   const [loading, setLoading] = useState(false);
@@ -84,7 +84,7 @@ export default function StationPage() {
   // -------------------------------------------------------------
   const loadAttendanceData = async () => {
     try {
-      const res = await fetch("/api/station/attendance/today");
+      const res = await fetch("/api/manager/attendance/today");
       const data = await res.json();
       if (res.ok && data.success) {
         setOpenShifts(data.data.openShifts || []);
@@ -101,7 +101,7 @@ export default function StationPage() {
   useEffect(() => {
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/station/attendance/search?q=${encodeURIComponent(searchQuery)}`);
+        const res = await fetch(`/api/manager/attendance/search?q=${encodeURIComponent(searchQuery)}`);
         const data = await res.json();
         if (res.ok && data.success) {
           const list: Employee[] = data.data.employees || [];
@@ -122,7 +122,7 @@ export default function StationPage() {
   const handleClockToggle = async (emp: Employee) => {
     setLoading(true);
     try {
-      const res = await fetch("/api/station/attendance/clock", {
+      const res = await fetch("/api/manager/attendance/clock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ employeeId: emp.id }),
@@ -173,7 +173,7 @@ export default function StationPage() {
 
   const loadStockData = async () => {
     try {
-      const res = await fetch("/api/station/stock/today");
+      const res = await fetch("/api/manager/stock/today");
       const data = await res.json();
       if (res.ok && data.success) {
         setStockState(data.data);
@@ -197,7 +197,7 @@ export default function StationPage() {
 
     setLoading(true);
     try {
-      const res = await fetch("/api/station/stock/start", {
+      const res = await fetch("/api/manager/stock/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ items: itemsPayload }),
@@ -225,7 +225,7 @@ export default function StationPage() {
     setLoading(true);
     setModalError(null);
     try {
-      const res = await fetch("/api/station/stock/restock", {
+      const res = await fetch("/api/manager/stock/restock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -256,7 +256,7 @@ export default function StationPage() {
     setLoading(true);
     setModalError(null);
     try {
-      const res = await fetch("/api/station/stock/waste", {
+      const res = await fetch("/api/manager/stock/waste", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -303,7 +303,7 @@ export default function StationPage() {
         countedQty: Number(qty) || 0,
       }));
 
-      const res = await fetch("/api/station/stock/count", {
+      const res = await fetch("/api/manager/stock/count", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -371,7 +371,7 @@ export default function StationPage() {
     }));
 
     try {
-      const res = await fetch("/api/station/stock/close", {
+      const res = await fetch("/api/manager/stock/close", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -422,7 +422,7 @@ export default function StationPage() {
                 CÁ VIÊN CHIÊN - ĐIỂM BÁN
               </h1>
               <p className="text-xs text-orange-200 font-medium">
-                Tài khoản Trạm máy (STATION) • Hôm nay: {todayVN()}
+                Tài khoản Quản lý chi nhánh (MANAGER) • Hôm nay: {todayVN()}
               </p>
             </div>
           </div>
@@ -723,67 +723,14 @@ export default function StationPage() {
                   </button>
                 </div>
 
-                {/* Items Grid with +/- Steppers */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {stockState?.activeMenuItems.map((item) => {
-                    const currentQty = importDraft[item.id] || 0;
-
-                    return (
-                      <div
-                        key={item.id}
-                        className="p-5 rounded-2xl border-2 border-slate-200 bg-slate-50 flex flex-col justify-between"
-                      >
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-slate-400">#{item.id}</span>
-                            <span className="text-sm font-extrabold text-orange-600">
-                              {formatVND(item.unit_price)}
-                            </span>
-                          </div>
-                          <h4 className="text-base font-black text-slate-900 mt-1 mb-4">
-                            {item.name}
-                          </h4>
-                        </div>
-
-                        {/* Large touch stepper */}
-                        <div className="flex items-center justify-between bg-white border border-slate-300 rounded-xl p-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = Math.max(0, currentQty - 5);
-                              saveLocalStorageDraft({ ...importDraft, [item.id]: next });
-                            }}
-                            className="w-12 h-12 rounded-lg bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 font-black text-lg flex items-center justify-center transition cursor-pointer"
-                          >
-                            <Minus className="w-5 h-5" />
-                          </button>
-
-                          <input
-                            type="number"
-                            min="0"
-                            value={currentQty}
-                            onChange={(e) => {
-                              const val = Math.max(0, parseInt(e.target.value) || 0);
-                              saveLocalStorageDraft({ ...importDraft, [item.id]: val });
-                            }}
-                            className="w-16 text-center font-black text-xl text-slate-900 bg-transparent focus:outline-none"
-                          />
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = currentQty + 5;
-                              saveLocalStorageDraft({ ...importDraft, [item.id]: next });
-                            }}
-                            className="w-12 h-12 rounded-lg bg-orange-100 hover:bg-orange-200 active:bg-orange-300 text-orange-700 font-black text-lg flex items-center justify-center transition cursor-pointer"
-                          >
-                            <Plus className="w-5 h-5" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <ItemInventoryGrid
+                  items={stockState?.menuItems ?? []}
+                  stockRows={[]}
+                  importDraft={importDraft}
+                  onImportDraftChange={(itemId, qty) =>
+                    saveLocalStorageDraft({ ...importDraft, [itemId]: qty })
+                  }
+                />
               </div>
             )}
 
@@ -859,6 +806,24 @@ export default function StationPage() {
                     </div>
                   </div>
 
+                  <ItemInventoryGrid
+                    items={stockState.menuItems}
+                    stockRows={stockState.items}
+                    canAdjustStock
+                    onRestock={(itemId) => {
+                      setModalItemId(itemId);
+                      setModalQty(1);
+                      setModalError(null);
+                      setModalType("restock");
+                    }}
+                    onWaste={(itemId) => {
+                      setModalItemId(itemId);
+                      setModalQty(1);
+                      setModalError(null);
+                      setModalType("waste");
+                    }}
+                  />
+
                   {/* Stock Table */}
                   <div className="overflow-x-auto mt-6">
                     <table className="w-full text-left text-sm">
@@ -918,7 +883,8 @@ export default function StationPage() {
 
             {/* Case 3: Day is Closed */}
             {stockState?.day && !stockState.isOpen && (
-              <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 text-center max-w-2xl mx-auto">
+              <div className="space-y-6">
+                <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 text-center max-w-2xl mx-auto">
                 <div className="w-16 h-16 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4">
                   <CheckCircle2 className="w-9 h-9" />
                 </div>
@@ -953,6 +919,11 @@ export default function StationPage() {
                     </span>
                   </div>
                 </div>
+                </div>
+                <ItemInventoryGrid
+                  items={stockState.menuItems}
+                  stockRows={stockState.items}
+                />
               </div>
             )}
           </div>

@@ -31,7 +31,8 @@ export async function POST(req: NextRequest) {
     const newId = await createItem(
       parsed.data.name,
       parsed.data.unitPrice,
-      parsed.data.imageUrl
+      parsed.data.imageUrl,
+      parsed.data.isActive
     );
 
     await insertAuditLog(
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest) {
         name: parsed.data.name,
         unitPrice: parsed.data.unitPrice,
         imageUrl: parsed.data.imageUrl,
+        isActive: parsed.data.isActive,
         createdBy: session.username,
       },
       nowVN()

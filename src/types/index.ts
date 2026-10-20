@@ -1,4 +1,8 @@
-export type AccountRole = "OWNER" | "STATION";
+export type AccountRole = "OWNER" | "MANAGER";
+
+export function isAccountRole(value: unknown): value is AccountRole {
+  return value === "OWNER" || value === "MANAGER";
+}
 
 export interface Account {
   id: number;
@@ -31,6 +35,7 @@ export interface Item {
   name: string;
   unit_price: number;
   image_url: string | null;
+  image_address?: string | null;
   is_active: number | boolean;
 }
 
@@ -42,6 +47,29 @@ export interface BusinessDay {
   total_revenue?: number;
   variance?: number | null;
   item_count?: number;
+}
+
+export interface OwnerDashboardEmployeeHours {
+  id: number;
+  name: string;
+  code: string;
+  totalHours: number;
+  shiftCount: number;
+  totalHoursFormatted: number;
+}
+
+export interface OwnerDashboardTopItem {
+  id: number;
+  name: string;
+  totalSold: number;
+  totalRevenue: number;
+}
+
+export interface OwnerDashboardData {
+  days: BusinessDay[];
+  employeeHours: OwnerDashboardEmployeeHours[];
+  topItems: OwnerDashboardTopItem[];
+  abnormalDays: BusinessDay[];
 }
 
 export interface DailyStock {

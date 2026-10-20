@@ -2,7 +2,7 @@ import "dotenv/config";
 import fs from "fs";
 import path from "path";
 import mysql from "mysql2/promise";
-import bcrypt from "bcryptjs";
+import { hashPassword } from "@/lib/auth";
 
 async function main() {
   const host = process.env.DB_HOST || "127.0.0.1";
@@ -11,10 +11,20 @@ async function main() {
   const password = process.env.DB_PASSWORD || "";
   const database = process.env.DB_NAME || "fishball_cart";
 
-  const ownerPassword = process.env.SEED_OWNER_PASSWORD || "cavienchien";
-  const stationPassword = process.env.SEED_STATION_PASSWORD || "yaemiko";
+  const ownerUsername = process.env.DEFAULT_OWNER_USERNAME || "owner";
+  const ownerPassword = process.env.DEFAULT_OWNER_PASSWORD || process.env.SEED_OWNER_PASSWORD;
+  const managerUsername = process.env.DEFAULT_MANAGER_USERNAME || "manager";
+  const managerPassword = process.env.DEFAULT_MANAGER_PASSWORD || process.env.SEED_MANAGER_PASSWORD;
+  if (!ownerPassword || !managerPassword) {
+    throw new Error(
+      "Set DEFAULT_OWNER_PASSWORD and DEFAULT_MANAGER_PASSWORD (or the compatible SEED_* variables) before seeding."
+    );
+  }
+  if (ownerUsername === managerUsername) {
+    throw new Error("DEFAULT_OWNER_USERNAME and DEFAULT_MANAGER_USERNAME must be different.");
+  }
 
-  console.log("Connecting to database:", database, "at", `${host}:${port}`);
+  console.log("Connecting to the configured MySQL database.");
 
   // Build optional SSL config (same logic as pool.ts)
   let sslOptions: mysql.SslOptions | undefined = undefined;
@@ -26,7 +36,16 @@ async function main() {
       const caPath = path.resolve(process.cwd(), process.env.DB_SSL_CA_FILE);
       caText = fs.readFileSync(caPath, "utf8");
     }
-    if (caText) sslOptions = { ca: caText, rejectUnauthorized: true };
+    if (caText) {
+      sslOptions = {
+        ca: caText,
+        rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== "false",
+      };
+    } else if (process.env.DB_SSL_REJECT_UNAUTHORIZED === "false") {
+      sslOptions = { rejectUnauthorized: false };
+    } else {
+      throw new Error("DB_SSL requires DB_SSL_CA or DB_SSL_CA_FILE when certificate verification is enabled.");
+    }
   }
 
   const conn = await mysql.createConnection({
@@ -41,34 +60,43 @@ async function main() {
   });
 
   try {
-    // 1. Seed accounts if they do not exist
-    const [existingAccounts]: any = await conn.execute(
-      "SELECT id, username, role FROM accounts WHERE username IN ('owner', 'station')"
+    const [roleColumns]: any = await conn.execute(
+      `SELECT COLUMN_TYPE AS columnType
+       FROM information_schema.columns
+       WHERE table_schema = DATABASE() AND table_name = 'accounts' AND column_name = 'role'`
     );
-
-    const usernames = existingAccounts.map((a: any) => a.username);
-
-    if (!usernames.includes("owner")) {
-      const hash = await bcrypt.hash(ownerPassword, 10);
-      await conn.execute(
-        "INSERT INTO accounts (username, role, password_hash, session_version) VALUES (?, 'OWNER', ?, 1)",
-        ["owner", hash]
+    const roleType = roleColumns[0]?.columnType || "";
+    if (!roleType.includes("OWNER") || !roleType.includes("MANAGER")) {
+      throw new Error(
+        "The configured accounts.role column does not support OWNER and MANAGER. No accounts were seeded."
       );
-      console.log("Created OWNER account: owner");
-    } else {
-      console.log("OWNER account already exists.");
     }
 
-    if (!usernames.includes("station")) {
-      const hash = await bcrypt.hash(stationPassword, 10);
-      await conn.execute(
-        "INSERT INTO accounts (username, role, password_hash, session_version) VALUES (?, 'STATION', ?, 1)",
-        ["station", hash]
-      );
-      console.log("Created STATION account: station");
-    } else {
-      console.log("STATION account already exists.");
-    }
+    const ownerHash = await hashPassword(ownerPassword);
+    const managerHash = await hashPassword(managerPassword);
+
+    await conn.beginTransaction();
+    await conn.execute(
+      `INSERT INTO accounts (username, role, password_hash, session_version)
+       VALUES (?, 'OWNER', ?, 1)
+       ON DUPLICATE KEY UPDATE
+         role = VALUES(role),
+         password_hash = VALUES(password_hash),
+         session_version = session_version + 1`,
+      [ownerUsername, ownerHash]
+    );
+    await conn.execute(
+      `INSERT INTO accounts (username, role, password_hash, session_version)
+       VALUES (?, 'MANAGER', ?, 1)
+       ON DUPLICATE KEY UPDATE
+         role = VALUES(role),
+         password_hash = VALUES(password_hash),
+         session_version = session_version + 1`,
+      [managerUsername, managerHash]
+    );
+    await conn.commit();
+    console.log(`Seeded OWNER account: ${ownerUsername}`);
+    console.log(`Seeded MANAGER account: ${managerUsername}`);
 
     // Check for --demo flag
     const isDemo = process.argv.includes("--demo");

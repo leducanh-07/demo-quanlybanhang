@@ -32,7 +32,7 @@ export default function LoginPage() {
       if (!res.ok || !data.success) {
         setErrorMessage(data.error || "Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin.");
       } else {
-        router.push(data.data.redirect || "/station");
+        router.push(data.data.redirect || "/manager");
       }
     } catch {
       setErrorMessage("Không thể kết nối đến máy chủ. Vui lòng kiểm tra mạng.");
@@ -81,7 +81,7 @@ export default function LoginPage() {
                 autoFocus
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="owner hoặc station"
+                placeholder="owner hoặc manager"
                 className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white transition text-base font-medium"
               />
             </div>

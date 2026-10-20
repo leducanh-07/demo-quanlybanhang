@@ -6,7 +6,7 @@ import { jsonSuccess, jsonError } from "@/lib/apiResponse";
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await requireAuth(["STATION"]);
+    const session = await requireAuth(["MANAGER"]);
     const body = await req.json();
     const parsed = closeDaySchema.safeParse(body);
     if (!parsed.success) {

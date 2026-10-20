@@ -1,6 +1,21 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import { signSessionToken, verifySessionToken, hashPassword, verifyPassword } from "../src/lib/auth";
 import { checkThrottle, recordFailedAttempt, resetThrottle } from "../src/lib/throttle";
+import { isAccountRole } from "../src/types";
+
+const originalSessionSecret = process.env.SESSION_SECRET;
+
+beforeAll(() => {
+  process.env.SESSION_SECRET = "unit-test-session-secret-at-least-32-characters";
+});
+
+afterAll(() => {
+  if (originalSessionSecret === undefined) {
+    delete process.env.SESSION_SECRET;
+  } else {
+    process.env.SESSION_SECRET = originalSessionSecret;
+  }
+});
 
 describe("Authentication, Throttling & Session Invalidation", () => {
   beforeEach(() => {
@@ -18,26 +33,26 @@ describe("Authentication, Throttling & Session Invalidation", () => {
   it("signs and verifies JWT token with embedded sessionVersion", async () => {
     const token = await signSessionToken({
       accountId: 1,
-      username: "station",
-      role: "STATION",
+      username: "manager",
+      role: "MANAGER",
       sessionVersion: 1,
     });
 
     const payload = await verifySessionToken(token);
     expect(payload).not.null;
-    expect(payload?.username).toBe("station");
-    expect(payload?.role).toBe("STATION");
+    expect(payload?.username).toBe("manager");
+    expect(payload?.role).toBe("MANAGER");
     expect(payload?.sessionVersion).toBe(1);
   });
 
-  it("invalidates station session when account session_version is bumped", async () => {
+  it("invalidates manager session when account session_version is bumped", async () => {
     const oldVersion = 1;
     const newVersion = 2; // Bumping version on password reset
 
     const tokenFromOldSession = await signSessionToken({
       accountId: 2,
-      username: "station",
-      role: "STATION",
+      username: "manager",
+      role: "MANAGER",
       sessionVersion: oldVersion,
     });
 
@@ -78,21 +93,28 @@ describe("Authentication, Throttling & Session Invalidation", () => {
 
   it("enforces permission matrix boundaries", () => {
     // Permission Matrix checks:
-    const canClockAttendance = (role: string) => role === "STATION";
+    const canClockAttendance = (role: string) => role === "MANAGER";
     const canViewRevenueHistory = (role: string) => role === "OWNER";
     const canAccessOwnerReports = (role: string) => role === "OWNER";
     const canReopenClosedDay = (role: string) => role === "OWNER";
 
-    // STATION permissions
-    expect(canClockAttendance("STATION")).toBe(true);
-    expect(canViewRevenueHistory("STATION")).toBe(false);
-    expect(canAccessOwnerReports("STATION")).toBe(false);
-    expect(canReopenClosedDay("STATION")).toBe(false);
+    // MANAGER permissions
+    expect(canClockAttendance("MANAGER")).toBe(true);
+    expect(canViewRevenueHistory("MANAGER")).toBe(false);
+    expect(canAccessOwnerReports("MANAGER")).toBe(false);
+    expect(canReopenClosedDay("MANAGER")).toBe(false);
 
     // OWNER permissions
     expect(canClockAttendance("OWNER")).toBe(false);
     expect(canViewRevenueHistory("OWNER")).toBe(true);
     expect(canAccessOwnerReports("OWNER")).toBe(true);
     expect(canReopenClosedDay("OWNER")).toBe(true);
+  });
+
+  it("accepts only the two supported account roles", () => {
+    expect(isAccountRole("OWNER")).toBe(true);
+    expect(isAccountRole("MANAGER")).toBe(true);
+    expect(isAccountRole("GUEST")).toBe(false);
+    expect(isAccountRole(null)).toBe(false);
   });
 });

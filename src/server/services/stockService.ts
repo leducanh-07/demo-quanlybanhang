@@ -40,13 +40,13 @@ export interface DayStockState {
 }
 
 /**
- * Get current stock state for STATION or OWNER
+ * Get current stock state for MANAGER or OWNER
  */
 export async function getTodayStockState(): Promise<DayStockState> {
   const today = todayVN();
   const unclosed = await listUnclosedDays();
 
-  // If today's day exists, use it. Otherwise, if there is an unclosed day, station can continue working on it.
+  // If today's day exists, use it. Otherwise, the manager can continue working on an unclosed day.
   let currentDay = await getBusinessDay(today);
   if (!currentDay && unclosed.length > 0) {
     // Open day carried over from yesterday/earlier
@@ -190,6 +190,19 @@ export async function addRestockQuantity(
   if (!item) return { success: false, error: "Món không nằm trong danh sách bán của ngày này." };
 
   await repoAddRestock(workDate, itemId, qty);
+  await insertAuditLog(
+    "STOCK_RESTOCK",
+    "daily_stock",
+    `${workDate}:${itemId}`,
+    {
+      itemId,
+      qty,
+      before: item.restock_qty,
+      after: item.restock_qty + qty,
+      updatedBy: actor.username,
+    },
+    nowVN()
+  );
   return { success: true };
 }
 
@@ -221,6 +234,19 @@ export async function addWasteQuantity(
   }
 
   await repoAddWaste(workDate, itemId, qty);
+  await insertAuditLog(
+    "STOCK_WASTE",
+    "daily_stock",
+    `${workDate}:${itemId}`,
+    {
+      itemId,
+      qty,
+      before: item.waste_qty,
+      after: item.waste_qty + qty,
+      updatedBy: actor.username,
+    },
+    nowVN()
+  );
   return { success: true };
 }
 

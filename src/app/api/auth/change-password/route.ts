@@ -6,7 +6,7 @@ import { jsonSuccess, jsonError } from "@/lib/apiResponse";
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await requireAuth(["OWNER", "STATION"]);
+    const session = await requireAuth(["OWNER", "MANAGER"]);
     const body = await req.json();
     const parsed = changePasswordSchema.safeParse(body);
     if (!parsed.success) {
@@ -27,6 +27,9 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     if (err.message === "UNAUTHORIZED") {
       return jsonError("Vui lòng đăng nhập lại", 401);
+    }
+    if (err.message === "FORBIDDEN") {
+      return jsonError("Không có quyền thực hiện", 403);
     }
     return jsonError("Lỗi hệ thống khi đổi mật khẩu", 500);
   }

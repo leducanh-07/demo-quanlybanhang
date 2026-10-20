@@ -28,15 +28,15 @@ export function getPool(): mysql.Pool {
           );
         }
         caText = fs.readFileSync(caPath, "utf8");
-      } else {
+      } else if (process.env.DB_SSL_REJECT_UNAUTHORIZED !== "false") {
         throw new Error(
-          "Cấu hình DB_SSL=true yêu cầu cung cấp DB_SSL_CA hoặc DB_SSL_CA_FILE."
+          "DB_SSL requires DB_SSL_CA or DB_SSL_CA_FILE unless certificate verification is explicitly disabled."
         );
       }
 
       sslOptions = {
-        ca: caText,
-        rejectUnauthorized: true,
+        ...(caText ? { ca: caText } : {}),
+        rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== "false",
       };
     }
 

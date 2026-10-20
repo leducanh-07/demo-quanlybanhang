@@ -7,7 +7,7 @@ loadAndValidateAivenEnv();
 console.log("🚀 Đang khởi động Next.js development server kết nối tới Aiven MySQL...\n");
 
 // 2. Spawn next dev with updated process.env
-const child = spawn("npx", ["next", "dev"], {
+const child = spawn("npx", ["next", "dev", ...process.argv.slice(2)], {
   stdio: "inherit",
   shell: true,
   env: process.env,

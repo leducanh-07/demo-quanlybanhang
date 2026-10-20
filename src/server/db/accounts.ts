@@ -38,10 +38,3 @@ export async function updatePasswordAndBumpSession(
     [newPasswordHash, accountId]
   );
 }
-
-export async function updateStationPassword(newPasswordHash: string): Promise<void> {
-  await query(
-    "UPDATE accounts SET password_hash = ?, session_version = session_version + 1 WHERE role = 'STATION'",
-    [newPasswordHash]
-  );
-}

@@ -11,7 +11,8 @@ import { listAllItems, listActiveItems } from "../db/items";
 import { insertAuditLog } from "../db/auditLogs";
 import { nowVN, todayVN, hoursBetween } from "@/lib/time";
 import { CONFIG } from "@/config";
-import type { AlertItem, Shift, BusinessDay, SessionPayload } from "@/types";
+import type { AlertItem, Shift, BusinessDay, SessionPayload, OwnerDashboardData } from "@/types";
+import { normalizeOwnerDashboardData } from "@/lib/ownerDashboard";
 
 export interface LiveAttendanceView {
   shiftId: number;
@@ -254,10 +255,12 @@ export async function getOwnerLiveView(): Promise<OwnerLiveView> {
 /**
  * Dashboard stats: revenue chart, top items, employee hours
  */
-export async function getOwnerDashboardData(filters?: {
-  startDate?: string;
-  endDate?: string;
-}) {
+export async function getOwnerDashboardData(
+  filters?: {
+    startDate?: string;
+    endDate?: string;
+  }
+): Promise<OwnerDashboardData> {
   const days = await listBusinessDays(filters);
   const shifts = await listShifts({
     startDate: filters?.startDate,
@@ -315,7 +318,7 @@ export async function getOwnerDashboardData(filters?: {
     return absVar > threshold;
   });
 
-  return {
+  return normalizeOwnerDashboardData({
     days,
     employeeHours: Array.from(empHoursMap.values()).map((e) => ({
       ...e,
@@ -325,7 +328,7 @@ export async function getOwnerDashboardData(filters?: {
       (a, b) => b.totalRevenue - a.totalRevenue
     ),
     abnormalDays,
-  };
+  });
 }
 
 /**

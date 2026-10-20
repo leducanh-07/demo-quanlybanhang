@@ -56,8 +56,8 @@ describe("Stock Day Closing & Lock Validation", () => {
     expect(validateCash(500000)).toBe(true);
   });
 
-  it("locks closed day for STATION and allows reopen only for OWNER", () => {
-    const canModifyDay = (dayClosedAt: string | null, role: "STATION" | "OWNER") => {
+  it("locks closed day for MANAGER and allows reopen only for OWNER", () => {
+    const canModifyDay = (dayClosedAt: string | null, role: "MANAGER" | "OWNER") => {
       if (dayClosedAt !== null) {
         // Day is CLOSED
         return role === "OWNER";
@@ -66,8 +66,8 @@ describe("Stock Day Closing & Lock Validation", () => {
       return true;
     };
 
-    expect(canModifyDay("2026-10-20 22:30:00", "STATION")).toBe(false);
+    expect(canModifyDay("2026-10-20 22:30:00", "MANAGER")).toBe(false);
     expect(canModifyDay("2026-10-20 22:30:00", "OWNER")).toBe(true);
-    expect(canModifyDay(null, "STATION")).toBe(true);
+    expect(canModifyDay(null, "MANAGER")).toBe(true);
   });
 });

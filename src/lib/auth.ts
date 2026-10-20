@@ -2,12 +2,16 @@ import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { CONFIG } from "@/config";
-import type { AccountRole, SessionPayload } from "@/types";
+import { isAccountRole, type AccountRole, type SessionPayload } from "@/types";
 import { getAccountById } from "@/server/db/accounts";
 
-const SECRET_KEY = new TextEncoder().encode(
-  process.env.SESSION_SECRET || "default_super_secret_fallback_key_32_chars_min"
-);
+function getSecretKey(): Uint8Array {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error("SESSION_SECRET must be configured with at least 32 characters");
+  }
+  return new TextEncoder().encode(secret);
+}
 
 /**
  * Hash password with bcrypt
@@ -33,7 +37,7 @@ export async function signSessionToken(payload: {
   role: AccountRole;
   sessionVersion: number;
 }): Promise<string> {
-  const days = payload.role === "STATION" ? CONFIG.STATION_SESSION_DAYS : CONFIG.OWNER_SESSION_DAYS;
+  const days = payload.role === "MANAGER" ? CONFIG.MANAGER_SESSION_DAYS : CONFIG.OWNER_SESSION_DAYS;
   const expSeconds = days * 24 * 60 * 60;
 
   return new SignJWT({
@@ -45,20 +49,35 @@ export async function signSessionToken(payload: {
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${expSeconds}s`)
-    .sign(SECRET_KEY);
+    .sign(getSecretKey());
 }
 
 /**
  * Verify JWT token string
  */
 export async function verifySessionToken(token: string): Promise<SessionPayload | null> {
+  const secretKey = getSecretKey();
   try {
-    const { payload } = await jwtVerify(token, SECRET_KEY);
+    const { payload } = await jwtVerify(token, secretKey);
+    if (
+      typeof payload.accountId !== "number" ||
+      !Number.isInteger(payload.accountId) ||
+      payload.accountId <= 0 ||
+      typeof payload.username !== "string" ||
+      payload.username.length === 0 ||
+      !isAccountRole(payload.role) ||
+      typeof payload.sessionVersion !== "number" ||
+      !Number.isInteger(payload.sessionVersion) ||
+      payload.sessionVersion < 0
+    ) {
+      return null;
+    }
+
     return {
-      accountId: payload.accountId as number,
-      username: payload.username as string,
-      role: payload.role as AccountRole,
-      sessionVersion: payload.sessionVersion as number,
+      accountId: payload.accountId,
+      username: payload.username,
+      role: payload.role,
+      sessionVersion: payload.sessionVersion,
       exp: payload.exp,
     };
   } catch {
@@ -81,6 +100,7 @@ export async function getSession(): Promise<SessionPayload | null> {
   try {
     const account = await getAccountById(payload.accountId);
     if (!account) return null;
+    if (account.role !== payload.role) return null;
     if (account.session_version !== payload.sessionVersion) {
       // Invalidated session!
       return null;
@@ -98,7 +118,7 @@ export async function getSession(): Promise<SessionPayload | null> {
  */
 export async function setSessionCookie(token: string, role: AccountRole): Promise<void> {
   const cookieStore = await cookies();
-  const days = role === "STATION" ? CONFIG.STATION_SESSION_DAYS : CONFIG.OWNER_SESSION_DAYS;
+  const days = role === "MANAGER" ? CONFIG.MANAGER_SESSION_DAYS : CONFIG.OWNER_SESSION_DAYS;
   const maxAge = days * 24 * 60 * 60;
 
   cookieStore.set(CONFIG.COOKIE_NAME, token, {
@@ -121,7 +141,7 @@ export async function clearSessionCookie(): Promise<void> {
 /**
  * Server-side guard: requires a specific role or throws/returns null
  */
-export async function requireAuth(allowedRoles: AccountRole[] = ["OWNER", "STATION"]): Promise<SessionPayload> {
+export async function requireAuth(allowedRoles: AccountRole[] = ["OWNER", "MANAGER"]): Promise<SessionPayload> {
   const session = await getSession();
   if (!session) {
     throw new Error("UNAUTHORIZED");

@@ -1,15 +1,15 @@
-import { getAccountByUsername, updatePasswordAndBumpSession, updateStationPassword } from "../db/accounts";
+import { getAccountByUsername, updatePasswordAndBumpSession } from "../db/accounts";
 import { hashPassword, verifyPassword, signSessionToken, setSessionCookie, clearSessionCookie } from "@/lib/auth";
 import { checkThrottle, recordFailedAttempt, resetThrottle } from "@/lib/throttle";
 import { insertAuditLog } from "../db/auditLogs";
 import { nowVN } from "@/lib/time";
-import type { SessionPayload } from "@/types";
+import { isAccountRole, type SessionPayload } from "@/types";
 
 export async function loginService(
   username: string,
   plainPassword: string,
   ip: string
-): Promise<{ success: boolean; role?: "OWNER" | "STATION"; error?: string }> {
+): Promise<{ success: boolean; role?: "OWNER" | "MANAGER"; error?: string }> {
   // Check throttle
   const throttle = checkThrottle(username, ip);
   if (throttle.isLocked) {
@@ -24,6 +24,9 @@ export async function loginService(
   if (!account) {
     recordFailedAttempt(username, ip);
     return { success: false, error: "Tên đăng nhập hoặc mật khẩu không chính xác." };
+  }
+  if (!isAccountRole(account.role)) {
+    return { success: false, error: "Vai trò tài khoản không hợp lệ." };
   }
 
   const isMatch = await verifyPassword(plainPassword, account.password_hash);
@@ -86,22 +89,27 @@ export async function changeOwnPasswordService(
   return { success: true };
 }
 
-export async function resetStationPasswordService(
-  session: SessionPayload,
+export async function resetManagerPasswordService(
+  owner: SessionPayload,
+  username: string,
   newPlain: string
 ): Promise<{ success: boolean; error?: string }> {
-  if (session.role !== "OWNER") {
-    return { success: false, error: "Chỉ chủ quán mới có quyền đổi mật khẩu trạm." };
+  if (owner.role !== "OWNER") {
+    return { success: false, error: "Chỉ chủ cửa hàng mới có quyền đặt lại mật khẩu quản lý." };
+  }
+
+  const manager = await getAccountByUsername(username);
+  if (!manager || manager.role !== "MANAGER") {
+    return { success: false, error: "Không tìm thấy tài khoản quản lý." };
   }
 
   const newHash = await hashPassword(newPlain);
-  await updateStationPassword(newHash);
-
+  await updatePasswordAndBumpSession(manager.id, newHash);
   await insertAuditLog(
-    "STATION_PASSWORD_RESET",
+    "MANAGER_PASSWORD_RESET",
     "accounts",
-    "station",
-    { resetBy: session.username },
+    String(manager.id),
+    { username: manager.username, resetBy: owner.username },
     nowVN()
   );
 

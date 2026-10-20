@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
     return jsonSuccess({
       role: result.role,
-      redirect: result.role === "STATION" ? "/station" : "/owner",
+      redirect: result.role === "MANAGER" ? "/manager" : "/owner",
     });
   } catch (err: any) {
     console.error("Login route error:", err);

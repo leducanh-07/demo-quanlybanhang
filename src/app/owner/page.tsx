@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   Activity,
@@ -25,7 +25,9 @@ import {
 } from "lucide-react";
 import { formatVND, formatSignedVND } from "@/lib/format";
 import { formatDateTimeVN, formatTimeOnly, todayVN } from "@/lib/time";
-import type { AlertItem } from "@/types";
+import type { AlertItem, Item, OwnerDashboardData } from "@/types";
+import { EMPTY_OWNER_DASHBOARD, normalizeOwnerDashboardData } from "@/lib/ownerDashboard";
+import { ItemInventoryGrid, type InventoryRow } from "@/components/ItemInventoryGrid";
 
 export default function OwnerPage() {
   const router = useRouter();
@@ -38,7 +40,9 @@ export default function OwnerPage() {
   const [lastRefreshed, setLastRefreshed] = useState<string>("");
 
   // Dashboard State
-  const [dashData, setDashData] = useState<any>(null);
+  const [dashData, setDashData] = useState<OwnerDashboardData | null>(null);
+  const [dashLoading, setDashLoading] = useState(false);
+  const [dashError, setDashError] = useState<string | null>(null);
   const [startDateFilter, setStartDateFilter] = useState("");
   const [endDateFilter, setEndDateFilter] = useState("");
 
@@ -51,13 +55,20 @@ export default function OwnerPage() {
   const [empFormActive, setEmpFormActive] = useState(true);
 
   // Items State
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
+  const [itemStockRows, setItemStockRows] = useState<InventoryRow[]>([]);
+  const [itemStockDate, setItemStockDate] = useState<string | null>(null);
+  const [itemStockOpen, setItemStockOpen] = useState(false);
   const [itemModalOpen, setItemModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<any | null>(null);
   const [itemFormName, setItemFormName] = useState("");
   const [itemFormPrice, setItemFormPrice] = useState<number>(0);
   const [itemFormUrl, setItemFormUrl] = useState("");
-  const [itemFormActive, setItemFormActive] = useState(true);
+  const [itemFormActive, setItemFormActive] = useState(false);
+  const [stockAdjustType, setStockAdjustType] = useState<"restock" | "waste" | null>(null);
+  const [stockAdjustItemId, setStockAdjustItemId] = useState<number | null>(null);
+  const [stockAdjustQty, setStockAdjustQty] = useState(1);
+  const [stockAdjustError, setStockAdjustError] = useState<string | null>(null);
 
   // Audit Logs State
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
@@ -66,8 +77,6 @@ export default function OwnerPage() {
   const [changePwdOpen, setChangePwdOpen] = useState(false);
   const [currentPwd, setCurrentPwd] = useState("");
   const [newPwd, setNewPwd] = useState("");
-  const [resetStationOpen, setResetStationOpen] = useState(false);
-  const [stationNewPwd, setStationNewPwd] = useState("");
 
   // Shift & Day Edit Modals
   const [editShiftModal, setEditShiftModal] = useState<any | null>(null);
@@ -98,6 +107,8 @@ export default function OwnerPage() {
   };
 
   const fetchDashboard = async () => {
+    setDashLoading(true);
+    setDashError(null);
     try {
       let url = "/api/owner/dashboard";
       const params = new URLSearchParams();
@@ -108,11 +119,47 @@ export default function OwnerPage() {
       const res = await fetch(url);
       const data = await res.json();
       if (res.ok && data.success) {
-        setDashData(data.data);
+        setDashData(normalizeOwnerDashboardData(data.data));
+      } else if (res.status === 401 || res.status === 403) {
+        router.push("/");
+      } else {
+        const msg =
+          (typeof data?.error === "string" && data.error) ||
+          "Không tải được dữ liệu báo cáo.";
+        setDashError(msg);
       }
     } catch (e) {
       console.error(e);
+      setDashError("Không tải được dữ liệu báo cáo. Vui lòng thử lại.");
+    } finally {
+      setDashLoading(false);
     }
+  };
+
+  const renderDashboardBody = (content: ReactNode): ReactNode => {
+    if (dashLoading && dashData === null) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+          <RefreshCw className="w-8 h-8 animate-spin mb-3 text-orange-500" />
+          <p className="text-sm font-bold">Đang tải dữ liệu báo cáo...</p>
+        </div>
+      );
+    }
+    if (dashError && dashData === null) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16">
+          <p className="text-sm font-bold text-rose-600 mb-4 text-center max-w-md">{dashError}</p>
+          <button
+            type="button"
+            onClick={fetchDashboard}
+            className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm"
+          >
+            Thử lại
+          </button>
+        </div>
+      );
+    }
+    return content;
   };
 
   const fetchEmployees = async () => {
@@ -127,9 +174,20 @@ export default function OwnerPage() {
 
   const fetchItems = async () => {
     try {
-      const res = await fetch("/api/owner/items");
-      const data = await res.json();
-      if (res.ok && data.success) setItems(data.data.items);
+      const [itemsResponse, stockResponse] = await Promise.all([
+        fetch("/api/owner/items"),
+        fetch("/api/manager/stock/today"),
+      ]);
+      const [itemsData, stockData] = await Promise.all([
+        itemsResponse.json(),
+        stockResponse.json(),
+      ]);
+      if (itemsResponse.ok && itemsData.success) setItems(itemsData.data.items);
+      if (stockResponse.ok && stockData.success) {
+        setItemStockRows(stockData.data.items || []);
+        setItemStockDate(stockData.data.day?.work_date || null);
+        setItemStockOpen(Boolean(stockData.data.isOpen));
+      }
     } catch (e) {
       console.error(e);
     }
@@ -238,6 +296,37 @@ export default function OwnerPage() {
     }
   };
 
+  const handleStockAdjustment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!stockAdjustType || stockAdjustItemId === null || !itemStockDate) return;
+
+    setLoading(true);
+    setStockAdjustError(null);
+    try {
+      const res = await fetch(`/api/manager/stock/${stockAdjustType}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workDate: itemStockDate,
+          itemId: stockAdjustItemId,
+          qty: stockAdjustQty,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(stockAdjustType === "restock" ? "Đã nhập thêm hàng" : "Đã ghi nhận hao hụt");
+        setStockAdjustType(null);
+        await fetchItems();
+      } else {
+        setStockAdjustError(data.error || "Không thể cập nhật tồn kho");
+      }
+    } catch {
+      setStockAdjustError("Lỗi kết nối máy chủ");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Reopen day
   const handleReopenDay = async (workDate: string) => {
     if (!confirm(`Bạn có chắc chắn muốn mở lại ngày bán ${workDate}?`)) return;
@@ -272,28 +361,6 @@ export default function OwnerPage() {
         setNewPwd("");
       } else {
         alert(data.error || "Đổi mật khẩu thất bại");
-      }
-    } catch {
-      alert("Lỗi kết nối");
-    }
-  };
-
-  // Reset station password
-  const handleResetStation = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const res = await fetch("/api/owner/reset-station-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ newPassword: stationNewPwd }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        showToast(data.data.message);
-        setResetStationOpen(false);
-        setStationNewPwd("");
-      } else {
-        alert(data.error || "Không thể đặt lại mật khẩu trạm");
       }
     } catch {
       alert("Lỗi kết nối");
@@ -338,15 +405,6 @@ export default function OwnerPage() {
             >
               <KeyRound className="w-4 h-4 text-orange-400" />
               <span className="hidden sm:inline">Đổi MK</span>
-            </button>
-
-            <button
-              onClick={() => setResetStationOpen(true)}
-              className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1.5 transition"
-              title="Đặt lại mật khẩu Trạm máy"
-            >
-              <RotateCcw className="w-4 h-4 text-red-400" />
-              <span className="hidden sm:inline">Khóa Trạm</span>
             </button>
 
             <button
@@ -733,113 +791,132 @@ export default function OwnerPage() {
               </div>
             </div>
 
-            {/* Visual Revenue Bar Chart */}
-            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-              <h3 className="text-lg font-black text-slate-900 mb-6">
-                Biểu đồ Doanh thu các ngày đã chốt
-              </h3>
+            {renderDashboardBody(
+              <>
+                {/* Visual Revenue Bar Chart */}
+                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                  <h3 className="text-lg font-black text-slate-900 mb-6">
+                    Biểu đồ Doanh thu các ngày đã chốt
+                  </h3>
 
-              {dashData?.days?.filter((d: any) => d.closed_at).length === 0 ? (
-                <p className="text-sm text-slate-400 py-8 text-center">Chưa có dữ liệu chốt ngày.</p>
-              ) : (() => {
-                const closedDays = dashData.days.filter((d: any) => d.closed_at).slice(0, 14);
-                const maxRev = Math.max(...closedDays.map((d: any) => d.total_revenue || 0), 100000);
+                  {(() => {
+                    const days = dashData?.days ?? EMPTY_OWNER_DASHBOARD.days;
+                    const closedDays = days
+                      .filter((d) => d.closed_at != null)
+                      .slice(0, 14);
 
-                return (
-                  <div className="space-y-3">
-                    {closedDays.map((d: any) => {
-                      const pct = Math.min(100, Math.round(((d.total_revenue || 0) / maxRev) * 100));
-                      const isAbnormal = Math.abs(d.variance || 0) > 20000;
-
+                    if (closedDays.length === 0) {
                       return (
-                        <div key={d.work_date} className="space-y-1">
-                          <div className="flex items-center justify-between text-xs font-bold text-slate-700">
-                            <span>{d.work_date}</span>
-                            <div className="flex items-center gap-2">
-                              <span>{formatVND(d.total_revenue)}</span>
-                              {isAbnormal && (
-                                <span className="text-rose-600 text-[10px] bg-rose-50 px-1.5 py-0.5 rounded font-black">
-                                  Lệch: {formatSignedVND(d.variance)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="h-6 w-full bg-slate-100 rounded-lg overflow-hidden flex">
-                            <div
-                              style={{ width: `${pct}%` }}
-                              className="h-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-lg transition-all duration-500 flex items-center px-2 text-[10px] text-white font-black"
-                            >
-                              {pct > 15 ? formatVND(d.total_revenue) : ""}
-                            </div>
-                          </div>
-                        </div>
+                        <p className="text-sm text-slate-400 py-8 text-center">
+                          Chưa có dữ liệu chốt ngày.
+                        </p>
                       );
-                    })}
-                  </div>
-                );
-              })()}
-            </div>
+                    }
 
-            {/* Top Items & Hours Worked Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Top Selling Items */}
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                <h3 className="text-lg font-black text-slate-900 mb-4">
-                  Top món bán chạy nhất
-                </h3>
-                <div className="space-y-3">
-                  {dashData?.topItems?.slice(0, 6).map((item: any, idx: number) => (
-                    <div
-                      key={item.id}
-                      className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="w-7 h-7 rounded-lg bg-orange-100 text-orange-700 font-black text-xs flex items-center justify-center">
-                          #{idx + 1}
-                        </span>
-                        <div>
-                          <h4 className="font-bold text-slate-900 text-sm">{item.name}</h4>
-                          <span className="text-xs text-slate-500">
-                            Đã bán: <b className="text-slate-800">{item.totalSold} phần</b>
+                    const maxRev = Math.max(
+                      ...closedDays.map((d) => Number(d.total_revenue) || 0),
+                      100000
+                    );
+
+                    return (
+                      <div className="space-y-3">
+                        {closedDays.map((d) => {
+                          const revenue = Number(d.total_revenue) || 0;
+                          const pct = Math.min(100, Math.round((revenue / maxRev) * 100));
+                          const variance = Number(d.variance) || 0;
+                          const isAbnormal = Math.abs(variance) > 20000;
+
+                          return (
+                            <div key={d.work_date} className="space-y-1">
+                              <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                                <span>{d.work_date}</span>
+                                <div className="flex items-center gap-2">
+                                  <span>{formatVND(revenue)}</span>
+                                  {isAbnormal && (
+                                    <span className="text-rose-600 text-[10px] bg-rose-50 px-1.5 py-0.5 rounded font-black">
+                                      Lệch: {formatSignedVND(variance)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="h-6 w-full bg-slate-100 rounded-lg overflow-hidden flex">
+                                <div
+                                  style={{ width: `${pct}%` }}
+                                  className="h-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-lg transition-all duration-500 flex items-center px-2 text-[10px] text-white font-black"
+                                >
+                                  {pct > 15 ? formatVND(revenue) : ""}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Top Items & Hours Worked Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Top Selling Items */}
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                    <h3 className="text-lg font-black text-slate-900 mb-4">
+                      Top món bán chạy nhất
+                    </h3>
+                    <div className="space-y-3">
+                      {(dashData?.topItems ?? []).slice(0, 6).map((item, idx) => (
+                        <div
+                          key={item.id}
+                          className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="w-7 h-7 rounded-lg bg-orange-100 text-orange-700 font-black text-xs flex items-center justify-center">
+                              #{idx + 1}
+                            </span>
+                            <div>
+                              <h4 className="font-bold text-slate-900 text-sm">{item.name}</h4>
+                              <span className="text-xs text-slate-500">
+                                Đã bán: <b className="text-slate-800">{item.totalSold} phần</b>
+                              </span>
+                            </div>
+                          </div>
+                          <span className="font-black text-sm text-slate-900">
+                            {formatVND(item.totalRevenue)}
                           </span>
                         </div>
-                      </div>
-                      <span className="font-black text-sm text-slate-900">
-                        {formatVND(item.totalRevenue)}
-                      </span>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
 
-              {/* Hours Worked per Employee */}
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                <h3 className="text-lg font-black text-slate-900 mb-4">
-                  Tổng giờ làm việc theo nhân viên
-                </h3>
-                <div className="space-y-3">
-                  {dashData?.employeeHours?.map((emp: any) => (
-                    <div
-                      key={emp.id}
-                      className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between"
-                    >
-                      <div>
-                        <span className="text-xs font-bold text-slate-400">{emp.code}</span>
-                        <h4 className="font-bold text-slate-900 text-sm">{emp.name}</h4>
-                        <span className="text-xs text-slate-500">
-                          Số ca: <b>{emp.shiftCount} ca</b>
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-base font-black text-emerald-600 block">
-                          {emp.totalHoursFormatted} giờ
-                        </span>
-                      </div>
+                  {/* Hours Worked per Employee */}
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                    <h3 className="text-lg font-black text-slate-900 mb-4">
+                      Tổng giờ làm việc theo nhân viên
+                    </h3>
+                    <div className="space-y-3">
+                      {(dashData?.employeeHours ?? []).map((emp) => (
+                        <div
+                          key={emp.id}
+                          className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between"
+                        >
+                          <div>
+                            <span className="text-xs font-bold text-slate-400">{emp.code}</span>
+                            <h4 className="font-bold text-slate-900 text-sm">{emp.name}</h4>
+                            <span className="text-xs text-slate-500">
+                              Số ca: <b>{emp.shiftCount} ca</b>
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-base font-black text-emerald-600 block">
+                              {emp.totalHoursFormatted} giờ
+                            </span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  </div>
                 </div>
-              </div>
-            </div>
+              </>
+            )}
           </div>
         )}
 
@@ -916,7 +993,7 @@ export default function OwnerPage() {
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-xl font-black text-slate-900">Thực đơn & Giá bán</h3>
+                <h3 className="text-xl font-black text-slate-900">Thực đơn & Kho hàng</h3>
                 <p className="text-xs text-slate-500">
                   Thay đổi giá chỉ áp dụng cho ngày mới; các ngày đã mở sẽ giữ nguyên giá snapshot. Mọi thay đổi giá đều được ghi nhận vào nhật ký kiểm toán.
                 </p>
@@ -928,7 +1005,7 @@ export default function OwnerPage() {
                   setItemFormName("");
                   setItemFormPrice(5000);
                   setItemFormUrl("");
-                  setItemFormActive(true);
+                  setItemFormActive(false);
                   setItemModalOpen(true);
                 }}
                 className="px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-sm flex items-center gap-1.5 shadow-md shadow-orange-600/20"
@@ -938,46 +1015,32 @@ export default function OwnerPage() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {items.map((it) => (
-                <div
-                  key={it.id}
-                  className="p-4 rounded-2xl border-2 border-slate-200 bg-slate-50 flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold text-slate-400">#{it.id}</span>
-                      <span className="text-sm font-black text-orange-600">
-                        {formatVND(it.unit_price)}
-                      </span>
-                    </div>
-                    <h4 className="text-base font-bold text-slate-900">{it.name}</h4>
-                    <span
-                      className={`text-xs font-semibold ${
-                        it.is_active ? "text-emerald-600" : "text-slate-400"
-                      }`}
-                    >
-                      {it.is_active ? "Đang bán" : "Ngưng bán"}
-                    </span>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      setEditingItem(it);
-                      setItemFormName(it.name);
-                      setItemFormPrice(it.unit_price);
-                      setItemFormUrl(it.image_url || "");
-                      setItemFormActive(Boolean(it.is_active));
-                      setItemModalOpen(true);
-                    }}
-                    className="mt-4 py-2 px-3 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold flex items-center justify-center gap-1.5"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    Chỉnh sửa món & giá
-                  </button>
-                </div>
-              ))}
-            </div>
+            <ItemInventoryGrid
+              items={items}
+              stockRows={itemStockRows}
+              canAdjustStock={itemStockOpen}
+              canEditItems
+              onRestock={(itemId) => {
+                setStockAdjustItemId(itemId);
+                setStockAdjustQty(1);
+                setStockAdjustError(null);
+                setStockAdjustType("restock");
+              }}
+              onWaste={(itemId) => {
+                setStockAdjustItemId(itemId);
+                setStockAdjustQty(1);
+                setStockAdjustError(null);
+                setStockAdjustType("waste");
+              }}
+              onEdit={(item) => {
+                setEditingItem(item);
+                setItemFormName(item.name);
+                setItemFormPrice(item.unit_price);
+                setItemFormUrl(item.image_url || "");
+                setItemFormActive(Boolean(item.is_active));
+                setItemModalOpen(true);
+              }}
+            />
           </div>
         )}
 
@@ -995,7 +1058,8 @@ export default function OwnerPage() {
               </p>
             </div>
 
-            <div className="overflow-x-auto">
+            {renderDashboardBody(
+              <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-xs font-black text-slate-400 uppercase">
@@ -1008,9 +1072,17 @@ export default function OwnerPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {dashData?.days?.map((d: any) => {
-                    const isClosed = Boolean(d.closed_at);
-                    const isAbnormal = isClosed && Math.abs(d.variance || 0) > 20000;
+                  {(dashData?.days ?? []).length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-10 text-center text-sm text-slate-400">
+                        Chưa có dữ liệu chốt ngày.
+                      </td>
+                    </tr>
+                  ) : (
+                  (dashData?.days ?? []).map((d) => {
+                    const isClosed = d.closed_at != null;
+                    const variance = d.variance != null ? Number(d.variance) : null;
+                    const isAbnormal = isClosed && variance !== null && Math.abs(variance) > 20000;
 
                     return (
                       <tr key={d.work_date} className="hover:bg-slate-50">
@@ -1018,7 +1090,7 @@ export default function OwnerPage() {
                         <td className="py-3.5 px-3">
                           {isClosed ? (
                             <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-slate-100 text-slate-700">
-                              Đã chốt ({formatTimeOnly(d.closed_at)})
+                              Đã chốt ({formatTimeOnly(d.closed_at!)})
                             </span>
                           ) : (
                             <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-emerald-100 text-emerald-800">
@@ -1027,23 +1099,23 @@ export default function OwnerPage() {
                           )}
                         </td>
                         <td className="py-3.5 px-3 text-right font-bold text-slate-900">
-                          {formatVND(d.total_revenue)}
+                          {formatVND(Number(d.total_revenue) || 0)}
                         </td>
                         <td className="py-3.5 px-3 text-right font-semibold text-slate-700">
                           {d.cash_counted !== null ? formatVND(d.cash_counted) : "-"}
                         </td>
                         <td className="py-3.5 px-3 text-right font-black">
-                          {d.variance !== null && d.variance !== undefined ? (
+                          {variance !== null ? (
                             <span
                               className={`px-2 py-0.5 rounded text-xs ${
                                 isAbnormal
                                   ? "bg-rose-100 text-rose-800"
-                                  : (d.variance || 0) < 0
+                                  : variance < 0
                                   ? "text-rose-600"
                                   : "text-emerald-600"
                               }`}
                             >
-                              {formatSignedVND(d.variance)}
+                              {formatSignedVND(variance)}
                             </span>
                           ) : (
                             "-"
@@ -1061,10 +1133,12 @@ export default function OwnerPage() {
                         </td>
                       </tr>
                     );
-                  })}
+                  })
+                  )}
                 </tbody>
               </table>
             </div>
+            )}
           </div>
         )}
 
@@ -1221,6 +1295,19 @@ export default function OwnerPage() {
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 uppercase">
+                  Đường dẫn hình ảnh
+                </label>
+                <input
+                  type="url"
+                  value={itemFormUrl}
+                  onChange={(e) => setItemFormUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 font-semibold"
+                />
+              </div>
+
               <div className="flex items-center gap-2 pt-1">
                 <input
                   type="checkbox"
@@ -1248,6 +1335,52 @@ export default function OwnerPage() {
                   className="flex-1 py-3 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold"
                 >
                   Lưu món
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {stockAdjustType && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-white p-6 shadow-2xl">
+            <h3 className="mb-4 text-xl font-black text-slate-900">
+              {stockAdjustType === "restock" ? "Nhập thêm hàng" : "Ghi nhận hao hụt / trả hàng"}
+            </h3>
+            {stockAdjustError && (
+              <p role="alert" className="mb-4 rounded-xl bg-rose-50 p-3 text-sm font-semibold text-rose-700">
+                {stockAdjustError}
+              </p>
+            )}
+            <form onSubmit={handleStockAdjustment} className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-bold text-slate-700">Số lượng</label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  value={stockAdjustQty}
+                  onChange={(event) =>
+                    setStockAdjustQty(Math.max(1, Number(event.target.value) || 1))
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-lg font-black"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setStockAdjustType(null)}
+                  className="flex-1 rounded-xl border border-slate-300 py-3 font-bold text-slate-700"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading || !itemStockDate}
+                  className="flex-1 rounded-xl bg-orange-600 py-3 font-bold text-white disabled:opacity-50"
+                >
+                  Xác nhận
                 </button>
               </div>
             </form>
@@ -1299,50 +1432,6 @@ export default function OwnerPage() {
                   className="flex-1 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold"
                 >
                   Cập nhật
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Reset Station Password Modal */}
-      {resetStationOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
-            <h3 className="text-xl font-black text-rose-600 mb-2">Đặt lại mật khẩu Trạm máy</h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Hành động này sẽ tăng session_version, ngay lập tức đăng xuất máy tính/tablet tại quầy và yêu cầu nhập mật khẩu mới.
-            </p>
-
-            <form onSubmit={handleResetStation} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1 uppercase">
-                  Mật khẩu mới cho tài khoản station
-                </label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={stationNewPwd}
-                  onChange={(e) => setStationNewPwd(e.target.value)}
-                  placeholder="Tối thiểu 6 ký tự"
-                  className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl font-bold"
-                />
-              </div>
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setResetStationOpen(false)}
-                  className="flex-1 py-3 rounded-xl border border-slate-300 font-bold text-slate-700"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold"
-                >
-                  Đổi & Thu hồi phiên
                 </button>
               </div>
             </form>
