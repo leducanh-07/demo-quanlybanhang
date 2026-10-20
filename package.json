@@ -1,0 +1,45 @@
+{
+  "name": "fishball-cart-management",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start -H 0.0.0.0",
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "seed": "tsx src/scripts/seed.ts",
+    "dev:aiven": "tsx src/scripts/run-dev-aiven.ts",
+    "seed:aiven": "tsx src/scripts/seed-aiven.ts",
+    "db:check:aiven": "tsx src/scripts/check-aiven.ts"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "clsx": "^2.1.1",
+    "dotenv": "^16.4.7",
+    "jose": "^6.0.8",
+    "lucide-react": "^1.16.0",
+    "mysql2": "^3.12.0",
+    "next": "^15.1.7",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^3.0.2",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.13.4",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.5.2",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}
