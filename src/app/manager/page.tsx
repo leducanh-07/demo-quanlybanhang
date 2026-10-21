@@ -21,7 +21,16 @@ import {
 import { formatVND, formatSignedVND } from "@/lib/format";
 import { formatTimeOnly, formatDateTimeVN, todayVN } from "@/lib/time";
 import type { Employee, Shift, Item } from "@/types";
-import { ItemInventoryGrid } from "@/components/ItemInventoryGrid";
+import { ItemInventoryTable } from "@/components/ItemInventoryTable";
+
+function parseQuantity(value: string): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
+}
+
+function isIntegerDraft(value: string): boolean {
+  return /^\d+$/.test(value.trim());
+}
 
 interface StockStateResponse {
   day: any;
@@ -56,15 +65,15 @@ export default function ManagerPage() {
   // STOCK STATE
   // -------------------------------------------------------------
   const [stockState, setStockState] = useState<StockStateResponse | null>(null);
-  const [importDraft, setImportDraft] = useState<Record<number, number>>({});
+  const [importDraft, setImportDraft] = useState<Record<number, string>>({});
 
   // Modals for Stock operations
   const [modalType, setModalType] = useState<"restock" | "waste" | "count" | "close" | null>(null);
   const [modalItemId, setModalItemId] = useState<number | null>(null);
-  const [modalQty, setModalQty] = useState<number>(1);
-  const [countDraft, setCountDraft] = useState<Record<number, number>>({});
-  const [closingCash, setClosingCash] = useState<number>(0);
-  const [closingEndingQty, setClosingEndingQty] = useState<Record<number, number>>({});
+  const [modalQty, setModalQty] = useState("1");
+  const [countDraft, setCountDraft] = useState<Record<number, string>>({});
+  const [closingCash, setClosingCash] = useState("0");
+  const [closingEndingQty, setClosingEndingQty] = useState<Record<number, string>>({});
   const [modalError, setModalError] = useState<string | null>(null);
 
   // Load initial data
@@ -72,6 +81,7 @@ export default function ManagerPage() {
     loadAttendanceData();
     loadStockData();
     loadLocalStorageDraft();
+    searchInputRef.current?.focus();
   }, []);
 
   const showToast = (msg: string) => {
@@ -159,12 +169,17 @@ export default function ManagerPage() {
     try {
       const draft = localStorage.getItem("fishball_import_draft");
       if (draft) {
-        setImportDraft(JSON.parse(draft));
+        const parsed: Record<string, unknown> = JSON.parse(draft);
+        setImportDraft(
+          Object.fromEntries(
+            Object.entries(parsed).map(([itemId, qty]) => [Number(itemId), String(qty ?? "")])
+          )
+        );
       }
     } catch {}
   };
 
-  const saveLocalStorageDraft = (draft: Record<number, number>) => {
+  const saveLocalStorageDraft = (draft: Record<number, string>) => {
     setImportDraft(draft);
     try {
       localStorage.setItem("fishball_import_draft", JSON.stringify(draft));
@@ -189,10 +204,18 @@ export default function ManagerPage() {
       alert("Không có món nào trong thực đơn");
       return;
     }
+    if (
+      stockState.activeMenuItems.some(
+        (item) => importDraft[item.id] !== undefined && !isIntegerDraft(importDraft[item.id])
+      )
+    ) {
+      alert("Số lượng đầu ngày phải là số nguyên không âm.");
+      return;
+    }
 
     const itemsPayload = stockState.activeMenuItems.map((item) => ({
       itemId: item.id,
-      importQty: importDraft[item.id] || 0,
+      importQty: parseQuantity(importDraft[item.id] ?? "0"),
     }));
 
     setLoading(true);
@@ -221,7 +244,11 @@ export default function ManagerPage() {
   // Restock action
   const handleRestockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!modalItemId || modalQty <= 0) return;
+    const qty = parseQuantity(modalQty);
+    if (!modalItemId || !isIntegerDraft(modalQty) || qty <= 0) {
+      setModalError("Số lượng nhập thêm phải là số nguyên lớn hơn 0.");
+      return;
+    }
     setLoading(true);
     setModalError(null);
     try {
@@ -231,7 +258,7 @@ export default function ManagerPage() {
         body: JSON.stringify({
           workDate: stockState?.day.work_date,
           itemId: modalItemId,
-          qty: modalQty,
+          qty,
         }),
       });
       const data = await res.json();
@@ -252,7 +279,11 @@ export default function ManagerPage() {
   // Waste action
   const handleWasteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!modalItemId || modalQty <= 0) return;
+    const qty = parseQuantity(modalQty);
+    if (!modalItemId || !isIntegerDraft(modalQty) || qty <= 0) {
+      setModalError("Số lượng hao hụt phải là số nguyên lớn hơn 0.");
+      return;
+    }
     setLoading(true);
     setModalError(null);
     try {
@@ -262,7 +293,7 @@ export default function ManagerPage() {
         body: JSON.stringify({
           workDate: stockState?.day.work_date,
           itemId: modalItemId,
-          qty: modalQty,
+          qty,
         }),
       });
       const data = await res.json();
@@ -283,9 +314,11 @@ export default function ManagerPage() {
   // Mid-Day Count action
   const openCountModal = () => {
     if (!stockState?.items) return;
-    const initial: Record<number, number> = {};
+    const initial: Record<number, string> = {};
     for (const it of stockState.items) {
-      initial[it.item_id] = it.latestCountedQty ?? (it.import_qty + it.restock_qty - it.waste_qty);
+      initial[it.item_id] = String(
+        it.latestCountedQty ?? (it.import_qty + it.restock_qty - it.waste_qty)
+      );
     }
     setCountDraft(initial);
     setModalError(null);
@@ -295,12 +328,16 @@ export default function ManagerPage() {
   const handleCountSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!stockState?.day) return;
+    if (Object.values(countDraft).some((qty) => !isIntegerDraft(qty))) {
+      setModalError("Số lượng kiểm kê phải là số nguyên không âm.");
+      return;
+    }
     setLoading(true);
     setModalError(null);
     try {
       const payload = Object.entries(countDraft).map(([id, qty]) => ({
         itemId: Number(id),
-        countedQty: Number(qty) || 0,
+        countedQty: parseQuantity(qty),
       }));
 
       const res = await fetch("/api/manager/stock/count", {
@@ -329,12 +366,16 @@ export default function ManagerPage() {
   // Close Day action
   const openCloseModal = () => {
     if (!stockState?.items) return;
-    const initial: Record<number, number> = {};
+    const initial: Record<number, string> = {};
     for (const it of stockState.items) {
-      initial[it.item_id] = it.latestCountedQty ?? 0;
+      initial[it.item_id] =
+        closingEndingQty[it.item_id] ??
+        (it.latestCountedQty === null || it.latestCountedQty === undefined
+          ? ""
+          : String(it.latestCountedQty));
     }
     setClosingEndingQty(initial);
-    setClosingCash(stockState.estimatedRevenue || 0);
+    setClosingCash(String(stockState.estimatedRevenue || 0));
     setModalError(null);
     setModalType("close");
   };
@@ -344,14 +385,16 @@ export default function ManagerPage() {
     if (!stockState?.items) return { totalRev: 0, itemsSummary: [] };
     let totalRev = 0;
     const itemsSummary = stockState.items.map((row) => {
-      const ending = closingEndingQty[row.item_id] ?? 0;
+      const endingText = closingEndingQty[row.item_id] ?? "";
+      const ending = parseQuantity(endingText);
       const available = row.import_qty + row.restock_qty - row.waste_qty;
-      const sold = Math.max(0, available - ending);
-      const sub = sold * row.unit_price;
-      totalRev += sub;
+      const sold = endingText.trim() === "" ? null : available - ending;
+      const sub = sold === null ? null : sold * row.unit_price;
+      if (sub !== null) totalRev += sub;
       return {
         ...row,
         ending,
+        endingText,
         sold,
         sub,
       };
@@ -362,12 +405,26 @@ export default function ManagerPage() {
   const handleCloseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!stockState?.day) return;
+    const missingEnding = stockState.items.some(
+      (row) => (closingEndingQty[row.item_id] ?? "").trim() === ""
+    );
+    if (missingEnding) {
+      setModalError("Vui lòng nhập tồn cuối ngày cho tất cả mặt hàng trong bảng.");
+      return;
+    }
+    if (
+      stockState.items.some((row) => !isIntegerDraft(closingEndingQty[row.item_id] ?? "")) ||
+      !isIntegerDraft(closingCash)
+    ) {
+      setModalError("Tồn cuối ngày và tiền mặt phải là số nguyên không âm.");
+      return;
+    }
     setLoading(true);
     setModalError(null);
 
     const itemsPayload = Object.entries(closingEndingQty).map(([id, qty]) => ({
       itemId: Number(id),
-      endingQty: Number(qty) || 0,
+      endingQty: parseQuantity(qty),
     }));
 
     try {
@@ -376,7 +433,7 @@ export default function ManagerPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           workDate: stockState.day.work_date,
-          cashCounted: Number(closingCash) || 0,
+          cashCounted: parseQuantity(closingCash),
           items: itemsPayload,
         }),
       });
@@ -496,7 +553,6 @@ export default function ManagerPage() {
                 <input
                   ref={searchInputRef}
                   type="text"
-                  autoFocus
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Gõ mã nhân viên hoặc tên..."
@@ -723,7 +779,7 @@ export default function ManagerPage() {
                   </button>
                 </div>
 
-                <ItemInventoryGrid
+                <ItemInventoryTable
                   items={stockState?.menuItems ?? []}
                   stockRows={[]}
                   importDraft={importDraft}
@@ -767,30 +823,6 @@ export default function ManagerPage() {
                     {/* Operational Buttons */}
                     <div className="flex flex-wrap items-center gap-2.5">
                       <button
-                        onClick={() => {
-                          setModalItemId(stockState.items[0]?.item_id || null);
-                          setModalQty(5);
-                          setModalError(null);
-                          setModalType("restock");
-                        }}
-                        className="flex-1 sm:flex-initial px-4 py-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-sm border border-blue-200 transition cursor-pointer"
-                      >
-                        + Thêm hàng
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setModalItemId(stockState.items[0]?.item_id || null);
-                          setModalQty(1);
-                          setModalError(null);
-                          setModalType("waste");
-                        }}
-                        className="flex-1 sm:flex-initial px-4 py-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold text-sm border border-amber-200 transition cursor-pointer"
-                      >
-                        - Hao hụt / Tặng
-                      </button>
-
-                      <button
                         onClick={openCountModal}
                         className="flex-1 sm:flex-initial px-4 py-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-sm border border-purple-200 transition cursor-pointer"
                       >
@@ -806,77 +838,28 @@ export default function ManagerPage() {
                     </div>
                   </div>
 
-                  <ItemInventoryGrid
+                  <ItemInventoryTable
                     items={stockState.menuItems}
                     stockRows={stockState.items}
+                    endingDraft={closingEndingQty}
+                    onEndingDraftChange={(itemId, value) =>
+                      setClosingEndingQty((current) => ({ ...current, [itemId]: value }))
+                    }
                     canAdjustStock
                     onRestock={(itemId) => {
                       setModalItemId(itemId);
-                      setModalQty(1);
+                      setModalQty("1");
                       setModalError(null);
                       setModalType("restock");
                     }}
                     onWaste={(itemId) => {
                       setModalItemId(itemId);
-                      setModalQty(1);
+                      setModalQty("1");
                       setModalError(null);
                       setModalType("waste");
                     }}
                   />
 
-                  {/* Stock Table */}
-                  <div className="overflow-x-auto mt-6">
-                    <table className="w-full text-left text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-200 text-xs font-black text-slate-400 uppercase tracking-wider">
-                          <th className="py-3 px-3">Mặt hàng</th>
-                          <th className="py-3 px-3 text-right">Đơn giá</th>
-                          <th className="py-3 px-3 text-center">Đầu ngày</th>
-                          <th className="py-3 px-3 text-center">Đã thêm</th>
-                          <th className="py-3 px-3 text-center">Hao hụt</th>
-                          <th className="py-3 px-3 text-center">Kiểm kê gần nhất</th>
-                          <th className="py-3 px-3 text-center">Đã bán (ước tính)</th>
-                          <th className="py-3 px-3 text-right">Tạm tính</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 font-medium">
-                        {stockState.items.map((row) => (
-                          <tr key={row.item_id} className="hover:bg-slate-50/80">
-                            <td className="py-3.5 px-3 font-bold text-slate-900">
-                              {row.item_name}
-                            </td>
-                            <td className="py-3.5 px-3 text-right font-semibold text-slate-600">
-                              {formatVND(row.unit_price)}
-                            </td>
-                            <td className="py-3.5 px-3 text-center font-bold text-slate-800">
-                              {row.import_qty}
-                            </td>
-                            <td className="py-3.5 px-3 text-center font-bold text-blue-600">
-                              +{row.restock_qty}
-                            </td>
-                            <td className="py-3.5 px-3 text-center font-bold text-amber-600">
-                              -{row.waste_qty}
-                            </td>
-                            <td className="py-3.5 px-3 text-center">
-                              {row.latestCountedQty !== undefined && row.latestCountedQty !== null ? (
-                                <span className="px-2 py-0.5 rounded font-black bg-purple-100 text-purple-800 text-xs">
-                                  {row.latestCountedQty}
-                                </span>
-                              ) : (
-                                <span className="text-xs text-slate-400">Chưa đếm</span>
-                              )}
-                            </td>
-                            <td className="py-3.5 px-3 text-center font-black text-emerald-600">
-                              {row.impliedSoldSoFar ?? 0}
-                            </td>
-                            <td className="py-3.5 px-3 text-right font-black text-slate-900">
-                              {formatVND(row.impliedRevenueSoFar)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
                 </div>
               </div>
             )}
@@ -920,10 +903,12 @@ export default function ManagerPage() {
                   </div>
                 </div>
                 </div>
-                <ItemInventoryGrid
-                  items={stockState.menuItems}
-                  stockRows={stockState.items}
-                />
+                <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <ItemInventoryTable
+                    items={stockState.menuItems}
+                    stockRows={stockState.items}
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -977,10 +962,14 @@ export default function ManagerPage() {
                   Số lượng thêm
                 </label>
                 <input
-                  type="number"
-                  min="1"
+                  type="text"
+                  inputMode="numeric"
                   value={modalQty}
-                  onChange={(e) => setModalQty(Math.max(1, parseInt(e.target.value) || 1))}
+                  onChange={(e) => setModalQty(e.currentTarget.value)}
+                  onBlur={(e) => {
+                    if (e.currentTarget.value.trim() === "") setModalQty("0");
+                  }}
+                  onWheel={(e) => e.currentTarget.blur()}
                   className="w-full p-3.5 bg-slate-50 border border-slate-300 rounded-xl text-xl font-black text-slate-900"
                 />
               </div>
@@ -1049,10 +1038,14 @@ export default function ManagerPage() {
                   Số lượng hao hụt / tặng
                 </label>
                 <input
-                  type="number"
-                  min="1"
+                  type="text"
+                  inputMode="numeric"
                   value={modalQty}
-                  onChange={(e) => setModalQty(Math.max(1, parseInt(e.target.value) || 1))}
+                  onChange={(e) => setModalQty(e.currentTarget.value)}
+                  onBlur={(e) => {
+                    if (e.currentTarget.value.trim() === "") setModalQty("0");
+                  }}
+                  onWheel={(e) => e.currentTarget.blur()}
                   className="w-full p-3.5 bg-slate-50 border border-slate-300 rounded-xl text-xl font-black text-slate-900"
                 />
               </div>
@@ -1120,13 +1113,22 @@ export default function ManagerPage() {
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-slate-500 font-semibold">Còn:</span>
                       <input
-                        type="number"
-                        min="0"
-                        value={countDraft[row.item_id] ?? 0}
+                        type="text"
+                        inputMode="numeric"
+                        value={countDraft[row.item_id] ?? ""}
                         onChange={(e) => {
-                          const val = Math.max(0, parseInt(e.target.value) || 0);
-                          setCountDraft({ ...countDraft, [row.item_id]: val });
+                          const value = e.currentTarget.value;
+                          setCountDraft((current) => ({
+                            ...current,
+                            [row.item_id]: value,
+                          }));
                         }}
+                        onBlur={(e) => {
+                          if (e.currentTarget.value.trim() === "") {
+                            setCountDraft((current) => ({ ...current, [row.item_id]: "0" }));
+                          }
+                        }}
+                        onWheel={(e) => e.currentTarget.blur()}
                         className="w-20 p-2 bg-white border border-slate-300 rounded-lg text-center font-black text-lg text-slate-900"
                       />
                     </div>
@@ -1158,7 +1160,8 @@ export default function ManagerPage() {
       {/* Close Day Modal with Live Revenue and Variance Preview */}
       {modalType === "close" && (() => {
         const { totalRev, itemsSummary } = computeClosingPreview();
-        const variance = (Number(closingCash) || 0) - totalRev;
+        const missingEndingCount = itemsSummary.filter((item) => item.endingText.trim() === "").length;
+        const variance = missingEndingCount === 0 ? parseQuantity(closingCash) - totalRev : null;
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1169,7 +1172,7 @@ export default function ManagerPage() {
                     Chốt sổ ngày {stockState?.day.work_date}
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                    Nhập tồn cuối ngày và tiền mặt kiểm đếm. Hệ thống sẽ tự động tính số lượng đã bán và doanh thu.
+                    Điền tồn cuối ngày trực tiếp trong bảng kho, sau đó nhập tiền mặt kiểm đếm tại đây.
                   </p>
                 </div>
                 <button
@@ -1187,39 +1190,10 @@ export default function ManagerPage() {
               )}
 
               <form onSubmit={handleCloseSubmit} className="flex-1 flex flex-col overflow-hidden mt-4">
-                {/* Ending quantities list */}
-                <div className="flex-1 overflow-y-auto space-y-2.5 pr-2 mb-4">
-                  <span className="text-xs uppercase font-extrabold text-slate-400 block mb-1">
-                    Số lượng tồn thực tế cuối ngày:
-                  </span>
-                  {itemsSummary.map((item) => (
-                    <div
-                      key={item.item_id}
-                      className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between"
-                    >
-                      <div>
-                        <h4 className="font-bold text-slate-900 text-sm">{item.item_name}</h4>
-                        <span className="text-xs text-slate-500">
-                          Đã bán: <b className="text-emerald-600">{item.sold}</b> • Tạm tính:{" "}
-                          <b>{formatVND(item.sub)}</b>
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-500 font-semibold">Tồn:</span>
-                        <input
-                          type="number"
-                          min="0"
-                          value={closingEndingQty[item.item_id] ?? 0}
-                          onChange={(e) => {
-                            const val = Math.max(0, parseInt(e.target.value) || 0);
-                            setClosingEndingQty({ ...closingEndingQty, [item.item_id]: val });
-                          }}
-                          className="w-20 p-2 bg-white border border-slate-300 rounded-lg text-center font-black text-lg text-slate-900"
-                        />
-                      </div>
-                    </div>
-                  ))}
+                <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-semibold text-slate-600">
+                  {missingEndingCount > 0
+                    ? `Còn ${missingEndingCount} mặt hàng chưa nhập tồn cuối ngày trong bảng.`
+                    : "Đã nhập đủ tồn cuối ngày cho các mặt hàng."}
                 </div>
 
                 {/* Cash count input & Live Variance preview */}
@@ -1229,11 +1203,14 @@ export default function ManagerPage() {
                       Tổng tiền mặt thực tế kiểm đếm (VNĐ)
                     </label>
                     <input
-                      type="number"
-                      min="0"
-                      step="1000"
+                      type="text"
+                      inputMode="numeric"
                       value={closingCash}
-                      onChange={(e) => setClosingCash(Math.max(0, parseInt(e.target.value) || 0))}
+                      onChange={(e) => setClosingCash(e.currentTarget.value)}
+                      onBlur={(e) => {
+                        if (e.currentTarget.value.trim() === "") setClosingCash("0");
+                      }}
+                      onWheel={(e) => e.currentTarget.blur()}
                       className="w-full p-3 bg-white border border-slate-300 rounded-xl text-2xl font-black text-slate-900"
                     />
                   </div>
@@ -1245,13 +1222,17 @@ export default function ManagerPage() {
                     </div>
                     <div>
                       <span className="text-xs text-slate-500 font-bold block">Chênh lệch (Tiền - Doanh thu)</span>
-                      <span
-                        className={`text-lg font-black ${
-                          variance < 0 ? "text-rose-600" : "text-emerald-600"
-                        }`}
-                      >
-                        {formatSignedVND(variance)}
-                      </span>
+                      {variance === null ? (
+                        <span className="text-sm font-bold text-slate-400">Nhập đủ tồn kho để tính</span>
+                      ) : (
+                        <span
+                          className={`text-lg font-black ${
+                            variance < 0 ? "text-rose-600" : "text-emerald-600"
+                          }`}
+                        >
+                          {formatSignedVND(variance)}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

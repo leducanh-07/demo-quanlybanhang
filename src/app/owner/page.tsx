@@ -27,7 +27,11 @@ import { formatVND, formatSignedVND } from "@/lib/format";
 import { formatDateTimeVN, formatTimeOnly, todayVN } from "@/lib/time";
 import type { AlertItem, Item, OwnerDashboardData } from "@/types";
 import { EMPTY_OWNER_DASHBOARD, normalizeOwnerDashboardData } from "@/lib/ownerDashboard";
-import { ItemInventoryGrid, type InventoryRow } from "@/components/ItemInventoryGrid";
+import { ItemInventoryTable, type InventoryRow } from "@/components/ItemInventoryTable";
+
+function isIntegerDraft(value: string): boolean {
+  return /^\d+$/.test(value.trim());
+}
 
 export default function OwnerPage() {
   const router = useRouter();
@@ -62,12 +66,11 @@ export default function OwnerPage() {
   const [itemModalOpen, setItemModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<any | null>(null);
   const [itemFormName, setItemFormName] = useState("");
-  const [itemFormPrice, setItemFormPrice] = useState<number>(0);
-  const [itemFormUrl, setItemFormUrl] = useState("");
+  const [itemFormPrice, setItemFormPrice] = useState("0");
   const [itemFormActive, setItemFormActive] = useState(false);
   const [stockAdjustType, setStockAdjustType] = useState<"restock" | "waste" | null>(null);
   const [stockAdjustItemId, setStockAdjustItemId] = useState<number | null>(null);
-  const [stockAdjustQty, setStockAdjustQty] = useState(1);
+  const [stockAdjustQty, setStockAdjustQty] = useState("1");
   const [stockAdjustError, setStockAdjustError] = useState<string | null>(null);
 
   // Audit Logs State
@@ -267,6 +270,10 @@ export default function OwnerPage() {
   // Save menu item
   const handleSaveItem = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isIntegerDraft(itemFormPrice)) {
+      alert("Đơn giá phải là số nguyên không âm.");
+      return;
+    }
     setLoading(true);
     try {
       const url = editingItem ? `/api/owner/items/${editingItem.id}` : "/api/owner/items";
@@ -277,7 +284,7 @@ export default function OwnerPage() {
         body: JSON.stringify({
           name: itemFormName.trim(),
           unitPrice: Number(itemFormPrice),
-          imageUrl: itemFormUrl.trim() || null,
+          imageUrl: editingItem?.image_url ?? null,
           isActive: itemFormActive,
         }),
       });
@@ -299,6 +306,10 @@ export default function OwnerPage() {
   const handleStockAdjustment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!stockAdjustType || stockAdjustItemId === null || !itemStockDate) return;
+    if (!isIntegerDraft(stockAdjustQty) || Number(stockAdjustQty) <= 0) {
+      setStockAdjustError("Số lượng phải là số nguyên lớn hơn 0.");
+      return;
+    }
 
     setLoading(true);
     setStockAdjustError(null);
@@ -309,7 +320,7 @@ export default function OwnerPage() {
         body: JSON.stringify({
           workDate: itemStockDate,
           itemId: stockAdjustItemId,
-          qty: stockAdjustQty,
+          qty: Number(stockAdjustQty),
         }),
       });
       const data = await res.json();
@@ -1003,8 +1014,7 @@ export default function OwnerPage() {
                 onClick={() => {
                   setEditingItem(null);
                   setItemFormName("");
-                  setItemFormPrice(5000);
-                  setItemFormUrl("");
+                  setItemFormPrice("5000");
                   setItemFormActive(false);
                   setItemModalOpen(true);
                 }}
@@ -1015,28 +1025,27 @@ export default function OwnerPage() {
               </button>
             </div>
 
-            <ItemInventoryGrid
+            <ItemInventoryTable
               items={items}
               stockRows={itemStockRows}
               canAdjustStock={itemStockOpen}
               canEditItems
               onRestock={(itemId) => {
                 setStockAdjustItemId(itemId);
-                setStockAdjustQty(1);
+                setStockAdjustQty("1");
                 setStockAdjustError(null);
                 setStockAdjustType("restock");
               }}
               onWaste={(itemId) => {
                 setStockAdjustItemId(itemId);
-                setStockAdjustQty(1);
+                setStockAdjustQty("1");
                 setStockAdjustError(null);
                 setStockAdjustType("waste");
               }}
               onEdit={(item) => {
                 setEditingItem(item);
                 setItemFormName(item.name);
-                setItemFormPrice(item.unit_price);
-                setItemFormUrl(item.image_url || "");
+                setItemFormPrice(String(item.unit_price));
                 setItemFormActive(Boolean(item.is_active));
                 setItemModalOpen(true);
               }}
@@ -1285,26 +1294,16 @@ export default function OwnerPage() {
                   Đơn giá (VNĐ)
                 </label>
                 <input
-                  type="number"
-                  step="500"
-                  min="0"
+                  type="text"
+                  inputMode="numeric"
                   required
                   value={itemFormPrice}
-                  onChange={(e) => setItemFormPrice(Math.max(0, parseInt(e.target.value) || 0))}
+                  onChange={(e) => setItemFormPrice(e.currentTarget.value)}
+                  onBlur={(e) => {
+                    if (e.currentTarget.value.trim() === "") setItemFormPrice("0");
+                  }}
+                  onWheel={(e) => e.currentTarget.blur()}
                   className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1 uppercase">
-                  Đường dẫn hình ảnh
-                </label>
-                <input
-                  type="url"
-                  value={itemFormUrl}
-                  onChange={(e) => setItemFormUrl(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 font-semibold"
                 />
               </div>
 
@@ -1357,13 +1356,15 @@ export default function OwnerPage() {
               <div>
                 <label className="mb-1 block text-sm font-bold text-slate-700">Số lượng</label>
                 <input
-                  type="number"
-                  min="1"
+                  type="text"
+                  inputMode="numeric"
                   required
                   value={stockAdjustQty}
-                  onChange={(event) =>
-                    setStockAdjustQty(Math.max(1, Number(event.target.value) || 1))
-                  }
+                  onChange={(event) => setStockAdjustQty(event.currentTarget.value)}
+                  onBlur={(event) => {
+                    if (event.currentTarget.value.trim() === "") setStockAdjustQty("0");
+                  }}
+                  onWheel={(event) => event.currentTarget.blur()}
                   className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-lg font-black"
                 />
               </div>

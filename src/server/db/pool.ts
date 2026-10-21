@@ -2,10 +2,12 @@ import mysql from "mysql2/promise";
 import fs from "fs";
 import path from "path";
 
-let pool: mysql.Pool | null = null;
+declare global {
+  var _mysqlPool: mysql.Pool | undefined;
+}
 
 export function getPool(): mysql.Pool {
-  if (!pool) {
+  if (!globalThis._mysqlPool) {
     const host = process.env.DB_HOST || "127.0.0.1";
     const port = Number(process.env.DB_PORT) || 3306;
     const user = process.env.DB_USER || "root";
@@ -40,7 +42,7 @@ export function getPool(): mysql.Pool {
       };
     }
 
-    pool = mysql.createPool({
+    globalThis._mysqlPool = mysql.createPool({
       host,
       port,
       user,
@@ -55,7 +57,7 @@ export function getPool(): mysql.Pool {
     });
   }
 
-  return pool;
+  return globalThis._mysqlPool;
 }
 
 /**
@@ -92,8 +94,11 @@ export async function withTransaction<T>(
  * Close pool connection (for cleanup and scripts)
  */
 export async function closePool(): Promise<void> {
+  const pool = globalThis._mysqlPool;
   if (pool) {
     await pool.end();
-    pool = null;
+    if (globalThis._mysqlPool === pool) {
+      globalThis._mysqlPool = undefined;
+    }
   }
 }

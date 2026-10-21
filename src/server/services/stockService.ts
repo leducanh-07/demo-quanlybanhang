@@ -365,7 +365,7 @@ export async function closeDay(
     workDate,
     {
       closedBy: actor.username,
-      cashCounted,
+      cashCounted,  
       totalRevenue: closedDay?.total_revenue,
       variance: closedDay?.variance,
     },
