@@ -19,7 +19,14 @@ import {
   UserCheck,
 } from "lucide-react";
 import { formatVND, formatSignedVND } from "@/lib/format";
-import { formatTimeOnly, formatDateTimeVN, todayVN } from "@/lib/time";
+import {
+  durationSecondsBetween,
+  formatDateTimeVN,
+  formatDurationSeconds,
+  formatTimeOnly,
+  nowVN,
+  todayVN,
+} from "@/lib/time";
 import type { Employee, Shift, Item } from "@/types";
 import { ItemInventoryTable } from "@/components/ItemInventoryTable";
 
@@ -50,6 +57,8 @@ export default function ManagerPage() {
   const [activeTab, setActiveTab] = useState<"attendance" | "stock">("attendance");
   const [loading, setLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  const [clockNow, setClockNow] = useState(nowVN());
 
   // -------------------------------------------------------------
   // ATTENDANCE STATE
@@ -82,6 +91,11 @@ export default function ManagerPage() {
     loadStockData();
     loadLocalStorageDraft();
     searchInputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setClockNow(nowVN()), 1000);
+    return () => window.clearInterval(interval);
   }, []);
 
   const showToast = (msg: string) => {
@@ -486,7 +500,7 @@ export default function ManagerPage() {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={handleLogout}
+              onClick={() => setLogoutConfirmOpen(true)}
               className="px-3.5 py-2 rounded-xl bg-orange-700 hover:bg-orange-800 active:bg-orange-900 text-white text-sm font-semibold flex items-center gap-1.5 transition"
               title="Đăng xuất"
             >
@@ -714,17 +728,28 @@ export default function ManagerPage() {
                           <span className="font-bold text-slate-800">{s.employee_name}</span>
                           <span className="text-xs text-slate-400 ml-1.5">({s.employee_code})</span>
                         </div>
-                        <div className="text-xs font-medium text-slate-600 flex items-center gap-2">
+                        <div className="text-xs font-medium text-slate-600 flex flex-wrap items-center gap-2">
                           <span className="text-emerald-600 font-bold">
                             Vào: {formatTimeOnly(s.check_in_time)}
                           </span>
                           {s.check_out_time ? (
-                            <span className="text-rose-600 font-bold">
-                              • Ra: {formatTimeOnly(s.check_out_time)}
-                            </span>
+                            <>
+                              <span className="text-rose-600 font-bold">
+                                • Ra: {formatTimeOnly(s.check_out_time)}
+                              </span>
+                              <span className="text-slate-700 font-bold">
+                                • Thời gian:{" "}
+                                {formatDurationSeconds(
+                                  durationSecondsBetween(s.check_in_time, s.check_out_time)
+                                )}
+                              </span>
+                            </>
                           ) : (
                             <span className="text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded font-black text-[10px]">
-                              Đang làm
+                              Đang làm ·{" "}
+                              {formatDurationSeconds(
+                                durationSecondsBetween(s.check_in_time, clockNow)
+                              )}
                             </span>
                           )}
                         </div>
@@ -1172,7 +1197,7 @@ export default function ManagerPage() {
                     Chốt sổ ngày {stockState?.day.work_date}
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                    Điền tồn cuối ngày trực tiếp trong bảng kho, sau đó nhập tiền mặt kiểm đếm tại đây.
+                    Xác nhận chốt sổ ngày bán hôm nay? Sau khi chốt, dữ liệu kho và doanh thu sẽ được khóa lại.
                   </p>
                 </div>
                 <button
@@ -1250,7 +1275,7 @@ export default function ManagerPage() {
                     disabled={loading}
                     className="flex-1 py-3.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-black text-base shadow-lg shadow-rose-600/30 cursor-pointer"
                   >
-                    XÁC NHẬN CHỐT SỔ
+                    Xác nhận chốt ngày
                   </button>
                 </div>
               </form>
@@ -1258,6 +1283,40 @@ export default function ManagerPage() {
           </div>
         );
       })()}
+
+      {logoutConfirmOpen && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="manager-logout-title"
+            className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl"
+          >
+            <h3 id="manager-logout-title" className="text-xl font-black text-slate-900">
+              Xác nhận đăng xuất
+            </h3>
+            <p className="text-sm text-slate-600 mt-3">
+              Bạn có chắc chắn muốn đăng xuất khỏi hệ thống?
+            </p>
+            <div className="flex gap-2 mt-6">
+              <button
+                type="button"
+                onClick={() => setLogoutConfirmOpen(false)}
+                className="flex-1 py-3 rounded-xl border border-slate-300 font-bold text-slate-700 hover:bg-slate-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold"
+              >
+                Xác nhận đăng xuất
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

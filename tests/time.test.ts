@@ -3,6 +3,8 @@ import {
   nowVN,
   todayVN,
   hoursBetween,
+  durationSecondsBetween,
+  formatDurationSeconds,
   formatTimeOnly,
   parseVNDateTime,
   formatDateVN,
@@ -40,5 +42,12 @@ describe("Vietnam Timezone Helpers (Asia/Ho_Chi_Minh)", () => {
     const start = "2026-10-20 08:00:00";
     const end = "2026-10-20 15:30:00";
     expect(hoursBetween(start, end)).toBe(7.5);
+  });
+
+  it("formats work durations with exact hours, minutes, and seconds", () => {
+    expect(durationSecondsBetween("2026-10-20 08:00:00", "2026-10-20 08:05:00")).toBe(300);
+    expect(formatDurationSeconds(300)).toBe("0 giờ 5 phút 0 giây");
+    expect(formatDurationSeconds(15 * 60 + 30)).toBe("0 giờ 15 phút 30 giây");
+    expect(formatDurationSeconds(4 * 3600 + 45 * 60)).toBe("4 giờ 45 phút 0 giây");
   });
 });

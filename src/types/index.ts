@@ -55,7 +55,7 @@ export interface OwnerDashboardEmployeeHours {
   code: string;
   totalHours: number;
   shiftCount: number;
-  totalHoursFormatted: number;
+  totalHoursFormatted: string;
 }
 
 export interface OwnerDashboardTopItem {

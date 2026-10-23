@@ -47,6 +47,8 @@ Hệ thống web app tinh gọn, chuyên dụng cho quán/xe cá viên chiên v�
   - Mật khẩu mặc định: `yaemiko`
   - Đường dẫn truy cập: `/manager`
 
+Trang `/owner` là trung tâm vận hành của chủ quán, bao gồm theo dõi tồn kho và ca đang hoạt động, báo cáo doanh thu, cảnh báo và lịch sử chốt ngày. Dữ liệu trực tiếp tự làm mới mỗi 20 giây; thời lượng ca hiển thị chính xác đến giây. Trang `/manager` dành riêng cho chấm công và thao tác kho tại điểm bán.
+
 ---
 
 ## 3. Triển Khai Thực Tế (Deployment Notes)

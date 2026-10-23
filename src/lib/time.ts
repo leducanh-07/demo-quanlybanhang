@@ -62,6 +62,20 @@ export function hoursBetween(startVN: string, endVN: string): number {
   return (endMs - startMs) / (1000 * 60 * 60);
 }
 
+export function durationSecondsBetween(startVN: string, endVN: string): number {
+  const startMs = parseVNDateTime(startVN).getTime();
+  const endMs = parseVNDateTime(endVN).getTime();
+  return Math.max(0, Math.floor((endMs - startMs) / 1000));
+}
+
+export function formatDurationSeconds(durationSeconds: number): string {
+  const totalSeconds = Math.max(0, Math.floor(durationSeconds));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${hours} giờ ${minutes} phút ${seconds} giây`;
+}
+
 /**
  * Parses a 'YYYY-MM-DD HH:MM:SS' or 'YYYY-MM-DD' string in VN time into a Date object
  */

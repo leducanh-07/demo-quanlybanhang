@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, type ReactNode } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   Activity,
@@ -24,10 +25,24 @@ import {
   X,
 } from "lucide-react";
 import { formatVND, formatSignedVND } from "@/lib/format";
-import { formatDateTimeVN, formatTimeOnly, todayVN } from "@/lib/time";
+import {
+  durationSecondsBetween,
+  formatDateTimeVN,
+  formatDurationSeconds,
+  formatTimeOnly,
+  nowVN,
+  todayVN,
+} from "@/lib/time";
 import type { AlertItem, Item, OwnerDashboardData } from "@/types";
 import { EMPTY_OWNER_DASHBOARD, normalizeOwnerDashboardData } from "@/lib/ownerDashboard";
 import { ItemInventoryTable, type InventoryRow } from "@/components/ItemInventoryTable";
+
+const RevenueChart = dynamic(() => import("@/components/RevenueChart"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-72 animate-pulse rounded-2xl bg-slate-100 sm:h-80" aria-label="Đang tải biểu đồ" />
+  ),
+});
 
 function isIntegerDraft(value: string): boolean {
   return /^\d+$/.test(value.trim());
@@ -35,9 +50,12 @@ function isIntegerDraft(value: string): boolean {
 
 export default function OwnerPage() {
   const router = useRouter();
+  const [hasMounted, setHasMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<"live" | "dashboard" | "employees" | "items" | "days" | "audit">("live");
   const [loading, setLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  const [clockNow, setClockNow] = useState("");
 
   // Live View State
   const [liveData, setLiveData] = useState<any>(null);
@@ -78,6 +96,7 @@ export default function OwnerPage() {
 
   // Password Modals
   const [changePwdOpen, setChangePwdOpen] = useState(false);
+  const [confirmPwdChangeOpen, setConfirmPwdChangeOpen] = useState(false);
   const [currentPwd, setCurrentPwd] = useState("");
   const [newPwd, setNewPwd] = useState("");
 
@@ -209,6 +228,13 @@ export default function OwnerPage() {
   // Initial load
   useEffect(() => {
     fetchLive();
+  }, []);
+
+  useEffect(() => {
+    setHasMounted(true);
+    setClockNow(nowVN());
+    const interval = window.setInterval(() => setClockNow(nowVN()), 1000);
+    return () => window.clearInterval(interval);
   }, []);
 
   // 20s Polling for Live Tab
@@ -356,8 +382,13 @@ export default function OwnerPage() {
   };
 
   // Change password
-  const handleChangePassword = async (e: React.FormEvent) => {
+  const handleChangePassword = (e: React.FormEvent) => {
     e.preventDefault();
+    setConfirmPwdChangeOpen(true);
+  };
+
+  const confirmChangePassword = async () => {
+    setLoading(true);
     try {
       const res = await fetch("/api/auth/change-password", {
         method: "POST",
@@ -368,6 +399,7 @@ export default function OwnerPage() {
       if (res.ok && data.success) {
         showToast("Đổi mật khẩu thành công!");
         setChangePwdOpen(false);
+        setConfirmPwdChangeOpen(false);
         setCurrentPwd("");
         setNewPwd("");
       } else {
@@ -375,6 +407,8 @@ export default function OwnerPage() {
       }
     } catch {
       alert("Lỗi kết nối");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -403,7 +437,7 @@ export default function OwnerPage() {
                 </span>
               </h1>
               <p className="text-xs text-slate-400">
-                Theo dõi từ xa • Ngày: {todayVN()}
+                Theo dõi từ xa • Ngày: {hasMounted ? todayVN() : ""}
               </p>
             </div>
           </div>
@@ -419,7 +453,7 @@ export default function OwnerPage() {
             </button>
 
             <button
-              onClick={handleLogout}
+              onClick={() => setLogoutConfirmOpen(true)}
               className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1.5 transition"
             >
               <LogOut className="w-4 h-4" />
@@ -656,7 +690,9 @@ export default function OwnerPage() {
                           </h4>
                         </div>
                         <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-emerald-100 text-emerald-800">
-                          {s.hoursElapsed} giờ
+                          {formatDurationSeconds(
+                            durationSecondsBetween(s.checkInTime, clockNow || s.checkInTime)
+                          )}
                         </span>
                       </div>
                       <div className="text-xs text-slate-500 mt-3 font-medium">
@@ -687,7 +723,7 @@ export default function OwnerPage() {
                 </p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
+                  <table className="w-full min-w-[900px] text-left text-sm">
                     <thead>
                       <tr className="border-b border-slate-200 text-xs font-black text-slate-400 uppercase">
                         <th className="py-2.5 px-3">Món</th>
@@ -702,39 +738,69 @@ export default function OwnerPage() {
                         <th className="py-2.5 px-3 text-right font-bold text-slate-900">
                           Tạm tính
                         </th>
+                        <th className="py-2.5 px-3 text-center">Cảnh báo</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-medium">
-                      {liveData?.stockItems?.map((it: any) => (
-                        <tr key={it.itemId} className="hover:bg-slate-50">
-                          <td className="py-3 px-3 font-bold text-slate-900">{it.itemName}</td>
-                          <td className="py-3 px-3 text-right text-slate-600">
-                            {formatVND(it.unitPrice)}
-                          </td>
-                          <td className="py-3 px-3 text-center text-slate-700">{it.importQty}</td>
-                          <td className="py-3 px-3 text-center text-blue-600 font-bold">
-                            +{it.restockQty}
-                          </td>
-                          <td className="py-3 px-3 text-center text-amber-600 font-bold">
-                            -{it.wasteQty}
-                          </td>
-                          <td className="py-3 px-3 text-center">
-                            {it.latestCountedQty !== null ? (
-                              <span className="px-2 py-0.5 rounded font-black bg-purple-100 text-purple-800 text-xs">
-                                {it.latestCountedQty}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-slate-400">-</span>
-                            )}
-                          </td>
-                          <td className="py-3 px-3 text-center font-black text-emerald-600">
-                            {it.impliedSoldSoFar}
-                          </td>
-                          <td className="py-3 px-3 text-right font-black text-slate-900">
-                            {formatVND(it.impliedRevenue)}
-                          </td>
-                        </tr>
-                      ))}
+                      {liveData?.stockItems?.map((it: any) => {
+                        const availableQty = it.importQty + it.restockQty - it.wasteQty;
+                        const lowStock =
+                          it.latestCountedQty !== null &&
+                          it.latestCountedQty <= Math.max(1, Math.ceil(availableQty * 0.1));
+                        const wastePercent =
+                          availableQty + it.wasteQty > 0
+                            ? (it.wasteQty / (availableQty + it.wasteQty)) * 100
+                            : 0;
+                        const highWaste = wastePercent > 10;
+
+                        return (
+                          <tr key={it.itemId} className="hover:bg-slate-50">
+                            <td className="py-3 px-3 font-bold text-slate-900">{it.itemName}</td>
+                            <td className="py-3 px-3 text-right text-slate-600">
+                              {formatVND(it.unitPrice)}
+                            </td>
+                            <td className="py-3 px-3 text-center text-slate-700">{it.importQty}</td>
+                            <td className="py-3 px-3 text-center text-blue-600 font-bold">
+                              +{it.restockQty}
+                            </td>
+                            <td className="py-3 px-3 text-center text-amber-600 font-bold">
+                              -{it.wasteQty}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              {it.latestCountedQty !== null ? (
+                                <span className="px-2 py-0.5 rounded font-black bg-purple-100 text-purple-800 text-xs">
+                                  {it.latestCountedQty}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-slate-400">-</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-center font-black text-emerald-600">
+                              {it.impliedSoldSoFar}
+                            </td>
+                            <td className="py-3 px-3 text-right font-black text-slate-900">
+                              {formatVND(it.impliedRevenue)}
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="flex flex-wrap justify-center gap-1">
+                                {lowStock && (
+                                  <span className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-800">
+                                    Tồn thấp
+                                  </span>
+                                )}
+                                {highWaste && (
+                                  <span className="whitespace-nowrap rounded-full bg-rose-100 px-2 py-1 text-[10px] font-black text-rose-800">
+                                    Hao hụt cao
+                                  </span>
+                                )}
+                                {!lowStock && !highWaste && (
+                                  <span className="text-xs text-slate-400">Ổn định</span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -814,7 +880,8 @@ export default function OwnerPage() {
                     const days = dashData?.days ?? EMPTY_OWNER_DASHBOARD.days;
                     const closedDays = days
                       .filter((d) => d.closed_at != null)
-                      .slice(0, 14);
+                      .sort((a, b) => a.work_date.localeCompare(b.work_date))
+                      .slice(-14);
 
                     if (closedDays.length === 0) {
                       return (
@@ -824,44 +891,13 @@ export default function OwnerPage() {
                       );
                     }
 
-                    const maxRev = Math.max(
-                      ...closedDays.map((d) => Number(d.total_revenue) || 0),
-                      100000
-                    );
-
                     return (
-                      <div className="space-y-3">
-                        {closedDays.map((d) => {
-                          const revenue = Number(d.total_revenue) || 0;
-                          const pct = Math.min(100, Math.round((revenue / maxRev) * 100));
-                          const variance = Number(d.variance) || 0;
-                          const isAbnormal = Math.abs(variance) > 20000;
-
-                          return (
-                            <div key={d.work_date} className="space-y-1">
-                              <div className="flex items-center justify-between text-xs font-bold text-slate-700">
-                                <span>{d.work_date}</span>
-                                <div className="flex items-center gap-2">
-                                  <span>{formatVND(revenue)}</span>
-                                  {isAbnormal && (
-                                    <span className="text-rose-600 text-[10px] bg-rose-50 px-1.5 py-0.5 rounded font-black">
-                                      Lệch: {formatSignedVND(variance)}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="h-6 w-full bg-slate-100 rounded-lg overflow-hidden flex">
-                                <div
-                                  style={{ width: `${pct}%` }}
-                                  className="h-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-lg transition-all duration-500 flex items-center px-2 text-[10px] text-white font-black"
-                                >
-                                  {pct > 15 ? formatVND(revenue) : ""}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <RevenueChart
+                        data={closedDays.map((day) => ({
+                          date: day.work_date,
+                          revenue: Number(day.total_revenue) || 0,
+                        }))}
+                      />
                     );
                   })()}
                 </div>
@@ -918,7 +954,7 @@ export default function OwnerPage() {
                           </div>
                           <div className="text-right">
                             <span className="text-base font-black text-emerald-600 block">
-                              {emp.totalHoursFormatted} giờ
+                              {emp.totalHoursFormatted}
                             </span>
                           </div>
                         </div>
@@ -1423,7 +1459,10 @@ export default function OwnerPage() {
               <div className="flex gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setChangePwdOpen(false)}
+                  onClick={() => {
+                    setChangePwdOpen(false);
+                    setConfirmPwdChangeOpen(false);
+                  }}
                   className="flex-1 py-3 rounded-xl border border-slate-300 font-bold text-slate-700"
                 >
                   Hủy
@@ -1436,6 +1475,76 @@ export default function OwnerPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {logoutConfirmOpen && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="owner-logout-title"
+            className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl"
+          >
+            <h3 id="owner-logout-title" className="text-xl font-black text-slate-900">
+              Xác nhận đăng xuất
+            </h3>
+            <p className="text-sm text-slate-600 mt-3">
+              Bạn có chắc chắn muốn đăng xuất khỏi hệ thống?
+            </p>
+            <div className="flex gap-2 mt-6">
+              <button
+                type="button"
+                onClick={() => setLogoutConfirmOpen(false)}
+                className="flex-1 py-3 rounded-xl border border-slate-300 font-bold text-slate-700 hover:bg-slate-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold"
+              >
+                Xác nhận đăng xuất
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmPwdChangeOpen && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="password-confirm-title"
+            className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl"
+          >
+            <h3 id="password-confirm-title" className="text-xl font-black text-slate-900">
+              Xác nhận đổi mật khẩu
+            </h3>
+            <p className="text-sm text-slate-600 mt-3">
+              Bạn có chắc chắn muốn đổi mật khẩu tài khoản này?
+            </p>
+            <div className="flex gap-2 mt-6">
+              <button
+                type="button"
+                onClick={() => setConfirmPwdChangeOpen(false)}
+                disabled={loading}
+                className="flex-1 py-3 rounded-xl border border-slate-300 font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Quay lại
+              </button>
+              <button
+                type="button"
+                onClick={confirmChangePassword}
+                disabled={loading}
+                className="flex-1 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold disabled:opacity-50"
+              >
+                {loading ? "Đang cập nhật..." : "Xác nhận đổi mật khẩu"}
+              </button>
+            </div>
           </div>
         </div>
       )}

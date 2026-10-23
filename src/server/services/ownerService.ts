@@ -9,7 +9,13 @@ import { getLatestCountsForDay, getLatestCountTimestamp } from "../db/stockCount
 import { listAllEmployees, listActiveEmployees } from "../db/employees";
 import { listAllItems, listActiveItems } from "../db/items";
 import { insertAuditLog } from "../db/auditLogs";
-import { nowVN, todayVN, hoursBetween } from "@/lib/time";
+import {
+  nowVN,
+  todayVN,
+  hoursBetween,
+  durationSecondsBetween,
+  formatDurationSeconds,
+} from "@/lib/time";
 import { CONFIG } from "@/config";
 import type { AlertItem, Shift, BusinessDay, SessionPayload, OwnerDashboardData } from "@/types";
 import { normalizeOwnerDashboardData } from "@/lib/ownerDashboard";
@@ -270,20 +276,20 @@ export async function getOwnerDashboardData(
   // 1. Employee hours worked: sum of check_out_time - check_in_time
   const empHoursMap = new Map<
     number,
-    { id: number; name: string; code: string; totalHours: number; shiftCount: number }
+    { id: number; name: string; code: string; totalSeconds: number; shiftCount: number }
   >();
 
   for (const s of shifts) {
     if (s.check_out_time) {
-      const h = hoursBetween(s.check_in_time, s.check_out_time);
+      const durationSeconds = durationSecondsBetween(s.check_in_time, s.check_out_time);
       const prev = empHoursMap.get(s.employee_id) || {
         id: s.employee_id,
         name: s.employee_name || "",
         code: s.employee_code || "",
-        totalHours: 0,
+        totalSeconds: 0,
         shiftCount: 0,
       };
-      prev.totalHours += Math.max(0, h);
+      prev.totalSeconds += durationSeconds;
       prev.shiftCount += 1;
       empHoursMap.set(s.employee_id, prev);
     }
@@ -321,8 +327,12 @@ export async function getOwnerDashboardData(
   return normalizeOwnerDashboardData({
     days,
     employeeHours: Array.from(empHoursMap.values()).map((e) => ({
-      ...e,
-      totalHoursFormatted: Math.round(e.totalHours * 10) / 10,
+      id: e.id,
+      name: e.name,
+      code: e.code,
+      totalHours: e.totalSeconds / 3600,
+      shiftCount: e.shiftCount,
+      totalHoursFormatted: formatDurationSeconds(e.totalSeconds),
     })),
     topItems: Array.from(itemSalesMap.values()).sort(
       (a, b) => b.totalRevenue - a.totalRevenue
